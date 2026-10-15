@@ -83,11 +83,31 @@ export function reviewCall(call, safeAddress) {
   const name = parsed.name;
   const recipient = parsed.args[RECIPIENT_ARG[name]];
 
+  // The decoded arguments say nothing about native value: it goes to the called contract.
+  if (value > 0n && !same(call.target, safeAddress)) {
+    return {
+      level: 'danger',
+      action: `${name} with native value`,
+      recipient: call.target,
+      message: 'Also sends native coin to the called contract, which is not your safe wallet.'
+    };
+  }
+
   if (name === 'setApprovalForAll' && !parsed.args.approved) {
     return { level: 'ok', action: 'revoke approval', recipient, message: 'Removes an operator approval.' };
   }
-  if (name === 'approve' && parsed.args.amountOrId === 0n) {
-    return { level: 'ok', action: 'revoke approval', recipient, message: 'Sets an allowance to zero.' };
+  if (name === 'approve' && recipient === ethers.ZeroAddress) {
+    return { level: 'ok', action: 'revoke approval', recipient, message: 'Clears an NFT approval.' };
+  }
+  if (name === 'approve' && parsed.args.amountOrId === 0n && !same(recipient, safeAddress)) {
+    // ERC-20 and ERC-721 share this selector. On an NFT contract, 0 is a token ID, so this
+    // would approve token #0 instead of revoking. The target type is not known here.
+    return {
+      level: 'unknown',
+      action: 'approve',
+      recipient,
+      message: 'Revokes an ERC-20 allowance, but on an NFT contract it approves token #0 for this address. Check the contract type.'
+    };
   }
 
   if (same(recipient, safeAddress)) {

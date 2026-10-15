@@ -53,7 +53,6 @@ test('NFT and multi-token transfers are checked on the "to" argument', () => {
 test('approvals to another address are danger, revocations are ok', () => {
   assert.equal(reviewCall(call(iface.encodeFunctionData('approve', [ATTACKER, ethers.MaxUint256])), SAFE).level, 'danger');
   assert.equal(reviewCall(call(iface.encodeFunctionData('setApprovalForAll', [ATTACKER, true])), SAFE).level, 'danger');
-  assert.equal(reviewCall(call(iface.encodeFunctionData('approve', [ATTACKER, 0n])), SAFE).level, 'ok');
   assert.equal(reviewCall(call(iface.encodeFunctionData('setApprovalForAll', [ATTACKER, false])), SAFE).level, 'ok');
 });
 
@@ -67,4 +66,19 @@ test('unknown calls are unknown, never ok', () => {
   assert.equal(reviewCall(call(iface.encodeFunctionData('stake', [1n])), SAFE).level, 'unknown');
   assert.equal(reviewCall(call('0xdeadbeef'), SAFE).level, 'unknown');
   assert.equal(reviewCall(call('0x', 0n), SAFE).level, 'unknown');
+});
+
+// Bypass: a token call to the safe wallet that also carries native value to the target.
+// The value goes to whatever contract is called, which may be the attacker's.
+test('native value attached to a decoded call to a non-safe target is danger', () => {
+  const review = reviewCall(call(iface.encodeFunctionData('transfer', [SAFE, 1n]), ethers.parseEther('10'), ATTACKER), SAFE);
+  assert.equal(review.level, 'danger');
+});
+
+// Bypass: ERC-20 and ERC-721 share approve(address,uint256). On an NFT contract the
+// second argument is a token ID, so approve(attacker, 0) grants token #0.
+test('approve(other, 0) is not reported as a safe revocation', () => {
+  assert.notEqual(reviewCall(call(iface.encodeFunctionData('approve', [ATTACKER, 0n])), SAFE).level, 'ok');
+  // Approving the zero address is the real ERC-721 revocation and is safe.
+  assert.equal(reviewCall(call(iface.encodeFunctionData('approve', [ethers.ZeroAddress, 7n])), SAFE).level, 'ok');
 });

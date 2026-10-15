@@ -20,6 +20,7 @@ export function RescueExecutor({ gasSettings }) {
     [batchCalls, safeWallet?.address]
   );
   const dangerCount = reviews.filter((review) => review.level === 'danger').length;
+  const unknownCount = reviews.filter((review) => review.level === 'unknown').length;
   const [acknowledged, setAcknowledged] = useState(false);
 
   // Any change to the batch or destination needs a fresh review.
@@ -156,7 +157,9 @@ export function RescueExecutor({ gasSettings }) {
           />{' '}
           {dangerCount > 0
             ? `I understand that ${dangerCount} call${dangerCount > 1 ? 's' : ''} will send assets or approvals away from my safe wallet.`
-            : 'I have reviewed every call in this batch.'}
+            : unknownCount > 0
+              ? `I have reviewed every call, including ${unknownCount} that could not be checked automatically, and I trust where they came from.`
+              : 'I have reviewed every call in this batch.'}
         </label>
       </div>
 
