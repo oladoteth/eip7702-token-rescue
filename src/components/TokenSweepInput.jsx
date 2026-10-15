@@ -4,13 +4,12 @@ import { useApp } from '../contexts/AppContext';
 import { buildErc20SweepCall } from '../utils/rescueTx';
 
 export function TokenSweepInput() {
-  const { provider, compromisedWallet, rescueWallet, addBatchCall } = useApp();
+  const { provider, compromisedWallet, safeWallet, addBatchCall } = useApp();
   const [tokenAddress, setTokenAddress] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState(null);
 
-  // Until the safe wallet step exists, assets go to the rescue wallet.
-  const destination = rescueWallet?.address;
+  const destination = safeWallet?.address;
 
   const handleAdd = async (e) => {
     e.preventDefault();

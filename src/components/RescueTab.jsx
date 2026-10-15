@@ -3,6 +3,7 @@ import { useApp } from "../contexts/AppContext";
 import { ChainSelector } from "./ChainSelector";
 import { RescueWalletInput } from "./RescueWalletInput";
 import { CompromisedWalletInput } from "./CompromisedWalletInput";
+import { SafeWalletInput } from "./SafeWalletInput";
 import { EnhancedContractLoader } from "./EnhancedContractLoader";
 import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
 import { TokenSweepInput } from "./TokenSweepInput";
@@ -12,7 +13,7 @@ import { GasSettings } from "./GasSettings";
 import { RescueExecutor } from "./RescueExecutor";
 
 export function RescueTab() {
-  const { rescueWallet, compromisedWallet, batchCalls, batcherContract, currentChain } =
+  const { rescueWallet, safeWallet, compromisedWallet, batchCalls, batcherContract, currentChain } =
     useApp();
   const [gasSettings, setGasSettings] = useState(null);
 
@@ -46,29 +47,36 @@ export function RescueTab() {
         </section>
       )}
 
-      {/* Step 3: Enter Compromised Wallet - Visible when rescue wallet is set */}
+      {/* Step 3: Set up Safe Wallet - Visible when rescue wallet is set */}
       {currentChain && rescueWallet && (
+        <section className="safe-wallet-section">
+          <SafeWalletInput />
+        </section>
+      )}
+
+      {/* Step 4: Enter Compromised Wallet - Visible when safe wallet is set */}
+      {currentChain && rescueWallet && safeWallet && (
         <section className="wallet-section">
           <CompromisedWalletInput />
         </section>
       )}
 
       {/* Step 4: Deploy/Set Batcher Contract - Visible when compromised wallet is set */}
-      {currentChain && rescueWallet && compromisedWallet && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && (
         <section className="batcher-section">
           <BatcherDeployment />
         </section>
       )}
 
       {/* Step 5: Load Contracts - Visible when batcher contract is set */}
-      {currentChain && rescueWallet && compromisedWallet && batcherContract && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="contract-section">
           <EnhancedContractLoader />
         </section>
       )}
 
       {/* Step 6: Build Batch Transactions - Visible when batcher contract is set */}
-      {currentChain && rescueWallet && compromisedWallet && batcherContract && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
           <TokenSweepInput />
           <InteractiveBatchBuilder />
@@ -76,21 +84,21 @@ export function RescueTab() {
       )}
 
       {/* Step 7: Review Batch Transactions - Visible when batch calls exist */}
-      {currentChain && rescueWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && (
         <section className="viewer-section">
           <BatchTransactionViewer />
         </section>
       )}
 
       {/* Step 8: Configure Gas - Visible when batch calls exist and batcher contract is set */}
-      {currentChain && rescueWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && (
         <section className="gas-section">
           <GasSettings onGasSettingsReady={setGasSettings} />
         </section>
       )}
 
       {/* Step 9: Execute Rescue - Visible when gas settings are ready */}
-      {currentChain && rescueWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && gasSettings && (
+      {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && gasSettings && (
         <section className="executor-section">
           <RescueExecutor gasSettings={gasSettings} />
         </section>
@@ -121,42 +129,49 @@ export function RescueTab() {
             </p>
           </div>
           <div className="step">
-            <h3>3. Enter Compromised Wallet</h3>
+            <h3>3. Set Up Safe Wallet</h3>
+            <p>
+              Choose where rescued assets go: connect a browser wallet, generate a new
+              one, import a key, or reuse the rescue wallet.
+            </p>
+          </div>
+          <div className="step">
+            <h3>4. Enter Compromised Wallet</h3>
             <p>
               Enter the private key of the compromised wallet. This is
               processed locally only.
             </p>
           </div>
           <div className="step">
-            <h3>4. Deploy Rescue Delegate</h3>
+            <h3>5. Deploy Rescue Delegate</h3>
             <p>
               One-time deployment per chain. The address is fixed for your rescue
               wallet, so it is reused automatically.
             </p>
           </div>
           <div className="step">
-            <h3>5. Load Contracts & ABIs</h3>
+            <h3>6. Load Contracts & ABIs</h3>
             <p>
               Load contracts and ABIs. View read/write functions or decode
               pasted transaction data.
             </p>
           </div>
           <div className="step">
-            <h3>6. Build Batch Transactions</h3>
+            <h3>7. Build Batch Transactions</h3>
             <p>
               Build transactions interactively or decode and add pasted
               transaction data.
             </p>
           </div>
           <div className="step">
-            <h3>7. Review & Configure Gas</h3>
+            <h3>8. Review & Configure Gas</h3>
             <p>
               Review transaction order, configure gas settings, and check balance
               sufficiency.
             </p>
           </div>
           <div className="step">
-            <h3>8. Execute Rescue</h3>
+            <h3>9. Execute Rescue</h3>
             <p>
               One EIP-7702 transaction: the compromised wallet delegates to the rescue
               delegate, and the rescue wallet pays the gas to run the whole batch.

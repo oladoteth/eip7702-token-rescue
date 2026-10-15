@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { ethers } from 'ethers';
 import { useApp } from '../contexts/AppContext';
 
 export function CompromisedWalletInput() {
-  const { compromisedWallet, setCompromisedWalletFromPrivateKey, setCompromisedWallet, provider } = useApp();
+  const { compromisedWallet, setCompromisedWalletFromPrivateKey, setCompromisedWallet, provider, safeWallet, rescueWallet } = useApp();
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState(null);
 
@@ -18,6 +19,16 @@ export function CompromisedWalletInput() {
     try {
       if (!provider) {
         setError('Provider not initialized. Please select a chain first.');
+        return;
+      }
+      // The attacker holds this key. Rescuing into it, or paying gas from it, defeats the rescue.
+      const address = new ethers.Wallet(privateKey.trim()).address.toLowerCase();
+      if (address === safeWallet?.address.toLowerCase()) {
+        setError('This is the safe wallet. Enter the key of the compromised wallet instead.');
+        return;
+      }
+      if (address === rescueWallet?.address.toLowerCase()) {
+        setError('This is the rescue wallet. Enter the key of the compromised wallet instead.');
         return;
       }
       setCompromisedWalletFromPrivateKey(privateKey.trim());

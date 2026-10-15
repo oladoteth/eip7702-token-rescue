@@ -15,6 +15,11 @@ export function AppProvider({ children }) {
   // Local app state
   const [rescueWallet, setRescueWallet] = useState(null); // Private key wallet for paying gas
   const [compromisedWallet, setCompromisedWallet] = useState(null);
+  // Destination for rescued assets: { address, source: 'connected'|'generated'|'imported'|'rescue',
+  // privateKey? (generated/imported), eip1193? (connected wallet provider), walletName? }
+  const [safeWallet, setSafeWallet] = useState(null);
+  // Bumped after a funding transfer so balance displays re-read.
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [batcherContract, setBatcherContract] = useState(null);
@@ -90,6 +95,7 @@ export function AppProvider({ children }) {
     // Clear React state
     if (clearRescueWallet) {
       setRescueWallet(null);
+      setSafeWallet(null);
     }
     setCompromisedWallet(null);
     setBatcherContract(null);
@@ -179,6 +185,10 @@ export function AppProvider({ children }) {
     setBatchCalls([]);
   }, []);
 
+  const refreshBalances = useCallback(() => {
+    setBalanceRefreshKey((key) => key + 1);
+  }, []);
+
   // Batcher contract management
   const setBatcherAddress = useCallback((address) => {
     if (address && provider) {
@@ -221,6 +231,8 @@ export function AppProvider({ children }) {
     // App state
     rescueWallet,
     compromisedWallet,
+    safeWallet,
+    balanceRefreshKey,
     batcherContract,
     contracts,
     batchCalls,
@@ -228,6 +240,8 @@ export function AppProvider({ children }) {
     
     // Functions
     setRescueWallet,
+    setSafeWallet,
+    refreshBalances,
     setSelectedChainId,
     setCompromisedWalletFromPrivateKey,
     setCompromisedWallet,

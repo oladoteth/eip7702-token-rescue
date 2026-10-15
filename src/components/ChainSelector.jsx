@@ -14,7 +14,8 @@ export function ChainSelector() {
     currentChain, 
     selectedChainId, 
     setSelectedChainId, 
-    provider 
+    provider,
+    balanceRefreshKey
   } = useApp();
   
   const [balance, setBalance] = useState(null);
@@ -95,7 +96,7 @@ export function ChainSelector() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [rescueWallet?.address, selectedChainId, provider, checkBalance]);
+  }, [rescueWallet?.address, selectedChainId, provider, checkBalance, balanceRefreshKey]);
 
   return (
     <div className="chain-selector">
