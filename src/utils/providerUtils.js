@@ -21,7 +21,8 @@ export async function createProviderWithFallback(rpcUrls, chainId) {
     const url = urls[i];
     try {
       console.log(`[ProviderUtils] Trying RPC endpoint ${i + 1}/${urls.length}: ${url}`);
-      const provider = new ethers.JsonRpcProvider(url);
+      // cacheTimeout -1: never reuse a cached nonce, balance or code read after a tx.
+      const provider = new ethers.JsonRpcProvider(url, undefined, { cacheTimeout: -1 });
       
       // Test the provider by getting the network
       const network = await Promise.race([

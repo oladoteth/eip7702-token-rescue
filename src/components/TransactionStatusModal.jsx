@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../contexts/AppContext';
 import { executeWithRetry } from '../utils/providerUtils';
+import { isDelegatedTo } from '../utils/rescueTx';
 
-export function TransactionStatusModal({ txHash, onClose }) {
+export function TransactionStatusModal({ txHash, compromisedAddress, delegateAddress, onClose }) {
   const { provider, currentChain } = useApp();
   const [status, setStatus] = useState(null); // 'success' or 'failed'
   const [mounted, setMounted] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [error, setError] = useState(null);
 
   // Creator info - Update these with your actual details
   const creatorTwitter = '@oladoteth'; // Replace with actual Twitter handle
@@ -63,12 +65,19 @@ export function TransactionStatusModal({ txHash, onClose }) {
       );
 
       if (receipt) {
-        if (receipt.status === 1) {
-          setStatus('success');
-          setConfirmations(receipt.confirmations || 0);
-        } else {
+        if (receipt.status !== 1) {
           setStatus('failed');
           setError('Transaction reverted');
+        } else if (!(await isDelegatedTo(provider, compromisedAddress, delegateAddress))) {
+          // The chain skips an authorization with a stale nonce without failing the tx.
+          // The call then hits a plain EOA and does nothing, so the receipt alone is not enough.
+          setStatus('failed');
+          setError(
+            'The transaction succeeded, but the delegation was not applied, so nothing was moved. ' +
+            'The compromised wallet probably sent another transaction first. Try again.'
+          );
+        } else {
+          setStatus('success');
         }
       } else {
         setStatus('failed');
@@ -128,10 +137,9 @@ export function TransactionStatusModal({ txHash, onClose }) {
 
         {!checking && status === 'success' && (
           <div className="modal-status">
-            <h2>Transaction Submitted Successfully!</h2>
+            <h2>Rescue Confirmed!</h2>
             <p className="success-message">
-              Your rescue transaction has been submitted successfully on the blockchain. 
-              Please check the explorer to see the transaction status.
+              Your rescue transaction is confirmed on-chain and every call in the batch succeeded.
             </p>
             <div className="tx-hash-display">
               <code>{txHash}</code>
@@ -163,7 +171,7 @@ export function TransactionStatusModal({ txHash, onClose }) {
           <div className="modal-status failed">
             <h2>Transaction Failed</h2>
             <p className="error-message">
-              Unfortunately, your transaction did not complete successfully.
+              {error || 'Unfortunately, your transaction did not complete successfully.'}
             </p>
             <div className="tx-hash-display">
               <code>{txHash}</code>

@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { encodeBatchExecuteCalls } from '../utils/contracts';
+import { buildRescueTx, describeRescueError } from '../utils/rescueTx';
 import { TransactionStatusModal } from './TransactionStatusModal';
-import { ethers } from 'ethers';
 
 export function RescueExecutor({ gasSettings }) {
   const {
@@ -52,76 +51,28 @@ export function RescueExecutor({ gasSettings }) {
     setTxHash(null);
 
     try {
-      // Step 1: Encode batch execution call
-      setStatus('Encoding batch execution...');
-      const batchData = encodeBatchExecuteCalls(batchCalls);
-      
-      // Calculate total value from batch calls (sum of all call values)
-      const totalValue = gasSettings?.totalValue || batchCalls.reduce((sum, call) => {
-        try {
-          return sum + BigInt(call.value || 0);
-        } catch {
-          return sum;
-        }
-      }, 0n);
+      // The compromised key signs an EIP-7702 authorization to our delegate. The rescue
+      // wallet sends one type-4 tx to the compromised address and pays all the gas.
+      setStatus('Signing delegation with the compromised wallet...');
+      const txRequest = await buildRescueTx({
+        compromised: compromisedWallet.wallet,
+        delegateAddress: batcherContract.address,
+        calls: batchCalls
+      });
 
-      // Step 2: Estimate gas for the batcher call
-      setStatus('Estimating gas...');
-      
-      // Use gas settings from GasSettings component
-      let maxFeePerGas, maxPriorityFeePerGas, gasLimit;
-      if (gasSettings) {
-        maxFeePerGas = gasSettings.maxFeePerGas;
-        maxPriorityFeePerGas = gasSettings.maxPriorityFeePerGas;
-        gasLimit = gasSettings.gasLimit;
-      } else {
-        // Fallback to automatic
-        const feeData = await provider.getFeeData();
-        maxFeePerGas = feeData.maxFeePerGas || ethers.parseUnits('1', 'gwei');
-        maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.parseUnits('1', 'gwei');
-        gasLimit = 600000n;
-      }
+      setStatus('Sending rescue transaction from the rescue wallet...');
+      const tx = await rescueWallet.wallet.sendTransaction({
+        ...txRequest,
+        gasLimit: gasSettings.gasLimit,
+        maxFeePerGas: gasSettings.maxFeePerGas,
+        maxPriorityFeePerGas: gasSettings.maxPriorityFeePerGas
+      });
 
-      const compromisedNonce = await compromisedWallet.getNonce();
-      const authorizationRequest = {
-        address: batcherContract.address,
-        nonce: compromisedNonce,
-        chainId: currentChain.chainId,
-      };
-      const authorization = await compromisedWallet.authorize(authorizationRequest);
-
-      // Step 3: Send transaction from rescue wallet to compromised wallet
-      // Transaction structure: rescue wallet -> compromised wallet
-      // Data: batcher execution data (batchExecuteCalls with targets, datas, values)
-      setStatus('Sending transaction from rescue wallet to compromised wallet...');
-      
-      // Get nonce for rescue wallet (the one paying gas)
-      let nonce = await rescueWallet.getNonce();
-      
-      // Build transaction: rescue wallet -> compromised wallet
-      // The data contains the batcher contract execution call
-      const txRequest = {
-        to: compromisedWallet.address, // Transaction TO compromised wallet
-        data: batchData, // Batcher execution data (batchExecuteCalls encoded)
-        value: totalValue, // Total value from batch calls
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        gasLimit,
-        type: 4, // EIP-7702 transaction type
-        authorizationList: [authorization], // Include the authorization for delegation
-        nonce: nonce++,
-        chainId: currentChain.chainId,
-        from: rescueWallet.address
-      };
-
-      // Sign and send transaction using rescue wallet (pays gas)
-      const tx = await rescueWallet.wallet.sendTransaction(txRequest);
-      
       setTxHash(tx.hash);
       setStatus(`Transaction submitted! Hash: ${tx.hash}`);
       setShowModal(true);
     } catch (err) {
-      setError(err.message);
+      setError(describeRescueError(err));
       setStatus(null);
       console.error('Rescue execution error:', err);
     } finally {
@@ -167,21 +118,22 @@ export function RescueExecutor({ gasSettings }) {
       <div className="info-box">
         <h4>Rescue Process:</h4>
         <ol>
-          <li>Encode batch transaction data from your batch calls</li>
-          <li>Fund compromised wallet with ETH for gas (if needed)</li>
-          <li>Call batcher contract from compromised wallet to execute batch</li>
-          <li>Batcher contract executes all transactions in the batch</li>
+          <li>The compromised wallet signs an EIP-7702 authorization to the rescue delegate (offline, no gas)</li>
+          <li>The rescue wallet sends one transaction to the compromised address with that authorization</li>
+          <li>The compromised account runs every call in the batch, in order</li>
+          <li>If any call fails, the whole batch reverts and nothing moves</li>
         </ol>
         <p className="note">
-          <strong>Note:</strong> The rescue wallet will automatically fund the compromised wallet 
-          with enough ETH for gas if needed. The compromised wallet then calls the batcher contract 
-          to execute the rescue transactions.
+          <strong>Note:</strong> No ETH is ever sent to the compromised wallet, so a sweeper bot has
+          nothing to take. The rescue wallet pays all the gas.
         </p>
       </div>
 
       {showModal && txHash && (
         <TransactionStatusModal
           txHash={txHash}
+          compromisedAddress={compromisedWallet.address}
+          delegateAddress={batcherContract.address}
           onClose={() => setShowModal(false)}
         />
       )}

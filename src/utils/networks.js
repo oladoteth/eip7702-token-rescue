@@ -135,6 +135,19 @@ export const NETWORKS = {
   }
 };
 
+// Local anvil node for testing a rescue end to end. Only listed in `npm run dev`.
+// Start it with: anvil --hardfork prague
+if (import.meta.env?.DEV) {
+  NETWORKS.anvil = {
+    chainId: 31337,
+    name: 'Anvil (local)',
+    rpcUrl: 'http://127.0.0.1:8545',
+    rpcUrls: ['http://127.0.0.1:8545'],
+    explorer: '',
+    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }
+  };
+}
+
 export function getNetworkByChainId(chainId) {
   return Object.values(NETWORKS).find(network => network.chainId === chainId);
 }

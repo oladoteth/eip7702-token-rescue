@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { estimateTransactionCost, checkBalanceSufficient, getWalletBalance } from '../utils/balanceChecker';
-import { encodeBatchExecuteCalls } from '../utils/contracts';
+import { checkBalanceSufficient, getWalletBalance } from '../utils/balanceChecker';
+import { buildRescueTx, estimateRescueGas } from '../utils/rescueTx';
 import { executeWithRetry } from '../utils/providerUtils';
 import { ethers } from 'ethers';
 
@@ -9,7 +9,6 @@ import { ethers } from 'ethers';
 const MIN_MAX_FEE_PER_GAS = ethers.parseUnits('1', 'gwei'); // 1 gwei minimum
 const MIN_MAX_PRIORITY_FEE_PER_GAS = ethers.parseUnits('1', 'gwei'); // 1 gwei minimum
 const MIN_GAS_LIMIT = 100000n; // 100,000 minimum
-const GAS_LIMIT_BUFFER = 100000n; // 100,000 gas buffer added to estimate
 
 /**
  * Get fee data with fallback for networks that don't support maxPriorityFeePerGas
@@ -98,6 +97,17 @@ export function GasSettings({ onGasSettingsReady }) {
   const [warning, setWarning] = useState(null);
   const [gasEstimationDetails, setGasEstimationDetails] = useState(null);
 
+  // Simulates the real type-4 rescue tx, including the authorization, so the estimate
+  // covers the delegated execution. Throws a readable error if the batch would revert.
+  const estimateBatchGasLimit = async () => {
+    const tx = await buildRescueTx({
+      compromised: compromisedWallet.wallet,
+      delegateAddress: batcherContract.address,
+      calls: batchCalls
+    });
+    return estimateRescueGas(provider, tx, rescueWallet.address);
+  };
+
   // Auto-populate custom fields when switching from automatic to custom
   useEffect(() => {
     if (gasMode === 'custom' && provider && batchCalls.length > 0 && compromisedWallet && batcherContract) {
@@ -117,29 +127,8 @@ export function GasSettings({ onGasSettingsReady }) {
           // Also populate gas limit if empty - estimate it
           if (!gasLimit) {
             try {
-              const batchData = encodeBatchExecuteCalls(batchCalls);
-              const totalValue = batchCalls.reduce((sum, call) => {
-                try {
-                  return sum + BigInt(call.value || 0);
-                } catch {
-                  return sum;
-                }
-              }, 0n);
-              
-              const txRequest = {
-                to: compromisedWallet.address,
-                data: batchData,
-                value: totalValue,
-                from: rescueWallet.address
-              };
-              
-              const estimated = await executeWithRetry(
-                provider,
-                async (p) => await p.estimateGas(txRequest),
-                3
-              );
-              const finalLimit = estimated + 100000n;
-              setGasLimit(finalLimit.toString());
+              const { gasLimit: estimated } = await estimateBatchGasLimit();
+              setGasLimit(estimated.toString());
             } catch (err) {
               console.warn('[GasSettings] Failed to estimate gas limit for auto-populate:', err);
               setGasLimit(MIN_GAS_LIMIT.toString());
@@ -184,18 +173,6 @@ export function GasSettings({ onGasSettingsReady }) {
     setWarning(null);
 
     try {
-      // Build transaction request
-      const batchData = encodeBatchExecuteCalls(batchCalls);
-      
-      // Calculate total value from batch calls (sum of all call values)
-      const totalValue = batchCalls.reduce((sum, call) => {
-        try {
-          return sum + BigInt(call.value || 0);
-        } catch {
-          return sum;
-        }
-      }, 0n);
-      
       // Get fee data with safe fallback and retry logic
       let feeData;
       try {
@@ -219,73 +196,22 @@ export function GasSettings({ onGasSettingsReady }) {
         ? feeData.maxPriorityFeePerGas
         : MIN_MAX_PRIORITY_FEE_PER_GAS;
 
-      // Build transaction request for gas estimation
-      // Transaction structure: rescue wallet -> compromised wallet
-      // Data: batcher contract execution data (batchExecuteCalls with targets, datas, values)
-      let txRequest;
-      if (gasMode === 'automatic') {
-        txRequest = {
-          to: compromisedWallet.address, // Transaction TO compromised wallet
-          data: batchData, // Batcher execution data (batchExecuteCalls encoded)
-          value: totalValue, // Include total value from batch calls
-          from: rescueWallet.address // Transaction FROM rescue wallet (pays gas)
-        };
-      } else {
-        // Custom gas settings - apply minimums
-        const customMaxFeePerGas = maxFeePerGas 
-          ? ethers.parseUnits(Math.max(parseFloat(maxFeePerGas), 1).toString(), 'gwei')
-          : safeMaxFeePerGas;
-        const customMaxPriorityFeePerGas = maxPriorityFeePerGas
-          ? ethers.parseUnits(Math.max(parseFloat(maxPriorityFeePerGas), 1).toString(), 'gwei')
-          : safeMaxPriorityFeePerGas;
-        const customGasLimit = gasLimit 
-          ? BigInt(Math.max(parseInt(gasLimit), Number(MIN_GAS_LIMIT)))
-          : undefined;
+      // A failed simulation means the batch would revert on-chain, so stop here
+      // instead of falling back to a guessed gas limit.
+      const { estimate: rawEstimate, gasLimit: estimatedGasLimit } = await estimateBatchGasLimit();
 
-        txRequest = {
-          to: compromisedWallet.address, // Transaction TO compromised wallet
-          data: batchData, // Batcher execution data (batchExecuteCalls encoded)
-          value: totalValue, // Include total value from batch calls
-          from: rescueWallet.address, // Transaction FROM rescue wallet (pays gas)
-          maxFeePerGas: customMaxFeePerGas,
-          maxPriorityFeePerGas: customMaxPriorityFeePerGas,
-          gasLimit: customGasLimit
-        };
-      }
-
-      // Estimate gas limit with retry logic
-      let estimatedGasLimit;
-      try {
-        estimatedGasLimit = await executeWithRetry(
-          provider, 
-          async (p) => await p.estimateGas(txRequest),
-          3
-        );
-      } catch (error) {
-        console.warn('[GasSettings] Gas estimation failed after retries, using default:', error);
-        estimatedGasLimit = MIN_GAS_LIMIT;
-        setWarning('⚠️ Gas estimation failed. Using minimum gas limit. Transaction may fail if insufficient.');
-      }
-
-      // Apply buffer: estimated + 100,000, but never below 100,000
-      const GAS_LIMIT_BUFFER = 100000n;
-      const bufferedGasLimit = estimatedGasLimit + GAS_LIMIT_BUFFER;
-      const finalGasLimit = bufferedGasLimit >= MIN_GAS_LIMIT ? bufferedGasLimit : MIN_GAS_LIMIT;
-
-      // Store estimation details for display
       setGasEstimationDetails({
-        rawEstimate: estimatedGasLimit,
-        bufferAmount: GAS_LIMIT_BUFFER,
-        finalGasLimit: finalGasLimit
+        rawEstimate,
+        bufferAmount: estimatedGasLimit - rawEstimate,
+        finalGasLimit: estimatedGasLimit
       });
 
       // Determine final gas values based on mode
-      let finalMaxFeePerGas, finalMaxPriorityFeePerGas, finalGasLimitForCost;
-      
+      let finalMaxFeePerGas, finalMaxPriorityFeePerGas, finalGasLimit;
       if (gasMode === 'automatic') {
         finalMaxFeePerGas = safeMaxFeePerGas;
         finalMaxPriorityFeePerGas = safeMaxPriorityFeePerGas;
-        finalGasLimitForCost = finalGasLimit;
+        finalGasLimit = estimatedGasLimit;
       } else {
         // Use custom values with minimums enforced
         finalMaxFeePerGas = maxFeePerGas 
@@ -294,61 +220,44 @@ export function GasSettings({ onGasSettingsReady }) {
         finalMaxPriorityFeePerGas = maxPriorityFeePerGas
           ? ethers.parseUnits(Math.max(parseFloat(maxPriorityFeePerGas), 1).toString(), 'gwei')
           : safeMaxPriorityFeePerGas;
-        finalGasLimitForCost = gasLimit 
+        finalGasLimit = gasLimit 
           ? BigInt(Math.max(parseInt(gasLimit), Number(MIN_GAS_LIMIT)))
-          : finalGasLimit;
+          : estimatedGasLimit;
       }
 
-      // Estimate cost using final values (with gas limit included)
-      const estimate = await estimateTransactionCost(provider, {
-        ...txRequest,
-        maxFeePerGas: finalMaxFeePerGas,
-        maxPriorityFeePerGas: finalMaxPriorityFeePerGas,
-        gasLimit: finalGasLimitForCost // This will be used instead of re-estimating
+      // Worst-case cost: the payer must hold gasLimit * maxFeePerGas for the tx to be accepted.
+      const totalCost = finalGasLimit * finalMaxFeePerGas;
+      setEstimatedCost({
+        gasLimit: finalGasLimit,
+        gasPrice: finalMaxFeePerGas,
+        totalCost,
+        formatted: ethers.formatEther(totalCost)
       });
-      
-      // Update estimate with the correct gas limit for display
-      estimate.gasLimit = finalGasLimitForCost;
-      estimate.totalCost = finalGasLimitForCost * estimate.gasPrice;
-      estimate.formatted = ethers.formatEther(estimate.totalCost);
-      
-      setEstimatedCost(estimate);
 
-      // Check balance (rescue wallet already validated above)
-      if (rescueWallet && rescueWallet.address) {
-        const balanceInfo = await getWalletBalance(provider, rescueWallet.address);
-        // Total cost includes gas + value from batch calls
-        const totalRequired = estimate.totalCost + totalValue;
-        const check = checkBalanceSufficient(balanceInfo.balance, totalRequired);
-        setBalanceCheck(check);
+      // The rescue wallet only pays gas. Call values come from the compromised wallet.
+      const balanceInfo = await getWalletBalance(provider, rescueWallet.address);
+      const check = checkBalanceSufficient(balanceInfo.balance, totalCost);
+      setBalanceCheck(check);
 
-        if (!check.isSufficient) {
-          setWarning(
-            `⚠️ Insufficient balance! You need ${check.shortfallFormatted} ${currentChain?.nativeCurrency?.symbol || 'ETH'} more. ` +
-            `Current: ${check.currentBalance}, Required: ${check.estimatedCost}. Please fund your rescue wallet.`
-          );
-        }
+      if (!check.isSufficient) {
+        setWarning(
+          `⚠️ Insufficient balance! You need ${check.shortfallFormatted} ${currentChain?.nativeCurrency?.symbol || 'ETH'} more. ` +
+          `Current: ${check.currentBalance}, Required: ${check.estimatedCost}. Please fund your rescue wallet.`
+        );
       }
 
-      // Pass gas settings to parent with minimums enforced
       if (onGasSettingsReady) {
         onGasSettingsReady({
           mode: gasMode,
-          maxFeePerGas: gasMode === 'automatic' 
-            ? safeMaxFeePerGas
-            : (maxFeePerGas ? ethers.parseUnits(Math.max(parseFloat(maxFeePerGas), 1).toString(), 'gwei') : safeMaxFeePerGas),
-          maxPriorityFeePerGas: gasMode === 'automatic'
-            ? safeMaxPriorityFeePerGas
-            : (maxPriorityFeePerGas ? ethers.parseUnits(Math.max(parseFloat(maxPriorityFeePerGas), 1).toString(), 'gwei') : safeMaxPriorityFeePerGas),
-          gasLimit: gasMode === 'automatic'
-            ? finalGasLimit
-            : (gasLimit ? BigInt(Math.max(parseInt(gasLimit), Number(MIN_GAS_LIMIT))) : finalGasLimit),
-          estimatedCost: estimate.totalCost,
-          totalValue: totalValue // Include total value for transaction
+          maxFeePerGas: finalMaxFeePerGas,
+          maxPriorityFeePerGas: finalMaxPriorityFeePerGas,
+          gasLimit: finalGasLimit,
+          estimatedCost: totalCost
         });
       }
     } catch (err) {
       setError(err.message);
+      onGasSettingsReady?.(null);
       console.error('Gas estimation error:', err);
     } finally {
       setEstimating(false);
@@ -405,29 +314,8 @@ export function GasSettings({ onGasSettingsReady }) {
                   
                   // Also estimate and populate gas limit
                   try {
-                    const batchData = encodeBatchExecuteCalls(batchCalls);
-                    const totalValue = batchCalls.reduce((sum, call) => {
-                      try {
-                        return sum + BigInt(call.value || 0);
-                      } catch {
-                        return sum;
-                      }
-                    }, 0n);
-                    
-                    const txRequest = {
-                      to: compromisedWallet.address,
-                      data: batchData,
-                      value: totalValue,
-                      from: rescueWallet.address
-                    };
-                    
-                    const estimated = await executeWithRetry(
-                      provider,
-                      async (p) => await p.estimateGas(txRequest),
-                      3
-                    );
-                    const finalLimit = estimated + 100000n;
-                    setGasLimit(finalLimit.toString());
+                    const { gasLimit: estimated } = await estimateBatchGasLimit();
+                    setGasLimit(estimated.toString());
                   } catch (err) {
                     console.warn('[GasSettings] Failed to estimate gas limit:', err);
                     setGasLimit(MIN_GAS_LIMIT.toString());
@@ -524,8 +412,8 @@ export function GasSettings({ onGasSettingsReady }) {
             <p><strong>Buffer Applied:</strong> +{gasEstimationDetails.bufferAmount.toString()} gas</p>
             <p><strong>Final Gas Limit:</strong> {gasEstimationDetails.finalGasLimit.toString()} gas</p>
             <p className="explanation-text">
-              We estimate the gas needed for your transaction, then add 100,000 gas as a buffer to ensure 
-              the transaction doesn't fail due to gas estimation inaccuracies. The final gas limit is always at least 100,000.
+              We simulate the full rescue transaction, including the delegation, then add a 25% buffer
+              so small differences between simulation and execution do not make it run out of gas.
             </p>
           </div>
         </div>
@@ -536,8 +424,8 @@ export function GasSettings({ onGasSettingsReady }) {
           <h4>Estimated Transaction Cost</h4>
           <div className="estimate-details">
             <p><strong>Gas Limit:</strong> {estimatedCost.gasLimit.toString()}</p>
-            <p><strong>Gas Price:</strong> {ethers.formatUnits(estimatedCost.gasPrice, 'gwei')} Gwei</p>
-            <p><strong>Total Cost:</strong> {estimatedCost.formatted} {currentChain?.nativeCurrency?.symbol || 'ETH'}</p>
+            <p><strong>Max Fee Per Gas:</strong> {ethers.formatUnits(estimatedCost.gasPrice, 'gwei')} Gwei</p>
+            <p><strong>Max Total Cost:</strong> {estimatedCost.formatted} {currentChain?.nativeCurrency?.symbol || 'ETH'}</p>
           </div>
         </div>
       )}

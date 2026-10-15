@@ -6,6 +6,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import { ethers } from 'ethers';
 import { getNetworkByChainId } from '../utils/networks';
 import { createProviderWithFallback } from '../utils/providerUtils';
+import { RESCUE_DELEGATE_ABI } from '../contracts/rescueDelegate.js';
 
 
 const AppContext = createContext(null);
@@ -181,10 +182,8 @@ export function AppProvider({ children }) {
   // Batcher contract management
   const setBatcherAddress = useCallback((address) => {
     if (address && provider) {
-      import('../utils/contracts').then(({ BATCHER_ABI }) => {
-        const contract = new ethers.Contract(address, BATCHER_ABI, provider);
-        setBatcherContract({ address, contract });
-      });
+      const contract = new ethers.Contract(address, RESCUE_DELEGATE_ABI, provider);
+      setBatcherContract({ address, contract });
     } else {
       setBatcherContract(null);
     }

@@ -5,6 +5,7 @@ import { RescueWalletInput } from "./RescueWalletInput";
 import { CompromisedWalletInput } from "./CompromisedWalletInput";
 import { EnhancedContractLoader } from "./EnhancedContractLoader";
 import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
+import { TokenSweepInput } from "./TokenSweepInput";
 import { BatchTransactionViewer } from "./BatchTransactionViewer";
 import { BatcherDeployment } from "./BatcherDeployment";
 import { GasSettings } from "./GasSettings";
@@ -69,6 +70,7 @@ export function RescueTab() {
       {/* Step 6: Build Batch Transactions - Visible when batcher contract is set */}
       {currentChain && rescueWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
+          <TokenSweepInput />
           <InteractiveBatchBuilder />
         </section>
       )}
@@ -126,10 +128,10 @@ export function RescueTab() {
             </p>
           </div>
           <div className="step">
-            <h3>4. Deploy/Set Batcher Contract</h3>
+            <h3>4. Deploy Rescue Delegate</h3>
             <p>
-              Deploy a new batcher contract or use an existing one. The address
-              is stored locally.
+              One-time deployment per chain. The address is fixed for your rescue
+              wallet, so it is reused automatically.
             </p>
           </div>
           <div className="step">
@@ -156,8 +158,8 @@ export function RescueTab() {
           <div className="step">
             <h3>8. Execute Rescue</h3>
             <p>
-              Execute the rescue using the batcher contract. Your rescue wallet pays gas,
-              compromised wallet executes the transactions.
+              One EIP-7702 transaction: the compromised wallet delegates to the rescue
+              delegate, and the rescue wallet pays the gas to run the whole batch.
             </p>
           </div>
         </div>

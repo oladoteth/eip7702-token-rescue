@@ -41,11 +41,4 @@ export default defineConfig({
       // Provide browser-compatible alternatives
     }
   },
-  optimizeDeps: {
-    exclude: ['solc'], // Don't pre-bundle solc, load it dynamically
-  },
-  worker: {
-    format: 'iife', // Use IIFE format for classic workers (needed for importScripts)
-    // Note: We use classic workers because soljson scripts require importScripts()
-  }
 })

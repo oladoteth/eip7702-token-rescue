@@ -98,35 +98,6 @@ export const ERC721_ABI = [
 ];
 
 /**
- * Batcher Contract ABI
- */
-export const BATCHER_ABI = [
-  {
-    inputs: [
-      {
-        internalType: 'address[]',
-        name: 'targets',
-        type: 'address[]'
-      },
-      {
-        internalType: 'bytes[]',
-        name: 'datas',
-        type: 'bytes[]'
-      },
-      {
-        internalType: 'uint256[]',
-        name: 'values',
-        type: 'uint256[]'
-      }
-    ],
-    name: 'batchExecuteCalls',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function'
-  }
-];
-
-/**
  * Parse ABI from JSON string, JavaScript object notation, or array
  * @param {string|Array} abiInput - ABI as JSON string, JavaScript object notation, or array
  * @returns {Array} Parsed ABI
@@ -183,46 +154,6 @@ export function parseABI(abiInput) {
 export function encodeFunctionCall(abi, functionName, params = []) {
   const iface = new ethers.Interface(abi);
   return iface.encodeFunctionData(functionName, params);
-}
-
-/**
- * Build batch transaction data
- * @param {Array} calls - Array of {target, data, value} objects
- * @returns {object} Batch data with targets, datas, and values arrays
- */
-export function buildBatchData(calls) {
-  if (!Array.isArray(calls) || calls.length === 0) {
-    throw new Error('Calls array cannot be empty');
-  }
-
-  const targets = [];
-  const datas = [];
-  const values = [];
-
-  for (const call of calls) {
-    if (!call.target || !ethers.isAddress(call.target)) {
-      throw new Error(`Invalid target address: ${call.target}`);
-    }
-    if (!call.data || call.data === '0x') {
-      throw new Error(`Invalid call data for target ${call.target}`);
-    }
-
-    targets.push(call.target);
-    datas.push(call.data);
-    values.push(call.value || 0n);
-  }
-
-  return { targets, datas, values };
-}
-
-/**
- * Encode batchExecuteCalls function
- * @param {Array} calls - Array of {target, data, value} objects
- * @returns {string} Encoded batchExecuteCalls data
- */
-export function encodeBatchExecuteCalls(calls) {
-  const { targets, datas, values } = buildBatchData(calls);
-  return encodeFunctionCall(BATCHER_ABI, 'batchExecuteCalls', [targets, datas, values]);
 }
 
 /**

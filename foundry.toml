@@ -1,0 +1,12 @@
+[profile.default]
+src = "contracts"
+test = "contracts/test"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 200
+# No metadata hash, so the bytecode (and the CREATE2 address) is reproducible.
+bytecode_hash = "none"
+cbor_metadata = false
