@@ -7,6 +7,7 @@ import { SafeWalletInput } from "./SafeWalletInput";
 import { EnhancedContractLoader } from "./EnhancedContractLoader";
 import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
 import { TokenSweepInput } from "./TokenSweepInput";
+import { AssetScanner } from "./AssetScanner";
 import { BatchTransactionViewer } from "./BatchTransactionViewer";
 import { BatcherDeployment } from "./BatcherDeployment";
 import { GasSettings } from "./GasSettings";
@@ -21,7 +22,7 @@ export function RescueTab() {
   // This ensures gas settings are recalculated when dependencies change
   useEffect(() => {
     setGasSettings(null);
-  }, [batchCalls.length, batcherContract?.address]);
+  }, [batchCalls, batcherContract?.address]);
 
   // Step-by-step flow enforcement
   // Step 1: Select chain (always visible)
@@ -78,6 +79,7 @@ export function RescueTab() {
       {/* Step 6: Build Batch Transactions - Visible when batcher contract is set */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
+          <AssetScanner />
           <TokenSweepInput />
           <InteractiveBatchBuilder />
         </section>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { checkBalanceSufficient, getWalletBalance } from '../utils/balanceChecker';
 import { buildRescueTx, estimateRescueGas } from '../utils/rescueTx';
@@ -97,6 +97,10 @@ export function GasSettings({ onGasSettingsReady }) {
   const [warning, setWarning] = useState(null);
   const [gasEstimationDetails, setGasEstimationDetails] = useState(null);
 
+  // Estimates are async and overlap when the batch changes quickly. Only the newest one
+  // may apply its result, or a stale failure can clear settings for a valid batch.
+  const latestEstimateRef = useRef(0);
+
   // Simulates the real type-4 rescue tx, including the authorization, so the estimate
   // covers the delegated execution. Throws a readable error if the batch would revert.
   const estimateBatchGasLimit = async () => {
@@ -148,9 +152,12 @@ export function GasSettings({ onGasSettingsReady }) {
       estimateGas();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchCalls.length, rescueWallet?.address, compromisedWallet?.address, batcherContract?.address, gasMode, maxFeePerGas, maxPriorityFeePerGas, gasLimit, provider]);
+  }, [batchCalls, rescueWallet?.address, compromisedWallet?.address, batcherContract?.address, gasMode, maxFeePerGas, maxPriorityFeePerGas, gasLimit, provider]);
 
   const estimateGas = async () => {
+    const estimateId = ++latestEstimateRef.current;
+    const isStale = () => estimateId !== latestEstimateRef.current;
+
     // Validate all required dependencies
     if (!provider) {
       setError('Provider not available. Please select a chain.');
@@ -187,6 +194,7 @@ export function GasSettings({ onGasSettingsReady }) {
         };
         setWarning('⚠️ Unable to fetch current gas prices. Using minimum values. Please check your network connection.');
       }
+      if (isStale()) return;
 
       // Ensure minimums
       const safeMaxFeePerGas = feeData.maxFeePerGas >= MIN_MAX_FEE_PER_GAS 
@@ -199,6 +207,7 @@ export function GasSettings({ onGasSettingsReady }) {
       // A failed simulation means the batch would revert on-chain, so stop here
       // instead of falling back to a guessed gas limit.
       const { estimate: rawEstimate, gasLimit: estimatedGasLimit } = await estimateBatchGasLimit();
+      if (isStale()) return;
 
       setGasEstimationDetails({
         rawEstimate,
@@ -236,6 +245,7 @@ export function GasSettings({ onGasSettingsReady }) {
 
       // The rescue wallet only pays gas. Call values come from the compromised wallet.
       const balanceInfo = await getWalletBalance(provider, rescueWallet.address);
+      if (isStale()) return;
       const check = checkBalanceSufficient(balanceInfo.balance, totalCost);
       setBalanceCheck(check);
 
@@ -256,11 +266,12 @@ export function GasSettings({ onGasSettingsReady }) {
         });
       }
     } catch (err) {
+      if (isStale()) return;
       setError(err.message);
       onGasSettingsReady?.(null);
       console.error('Gas estimation error:', err);
     } finally {
-      setEstimating(false);
+      if (!isStale()) setEstimating(false);
     }
   };
 

@@ -195,15 +195,30 @@ export async function buildErc20SweepCall(provider, token, from, to) {
   if (balance === 0n) {
     throw new Error(`${symbol} balance is zero`);
   }
+  return erc20TransferCall({ token, to, amount: balance, symbol, decimals });
+}
+
+/**
+ * ERC-20 transfer as a batch call, for a balance that was already read on-chain.
+ * @param {object} params
+ * @param {string} params.token
+ * @param {string} params.to - Safe wallet
+ * @param {bigint} params.amount
+ * @param {string} params.symbol
+ * @param {number|bigint|null} params.decimals - null shows the raw amount
+ * @returns {object} A batch call
+ */
+export function erc20TransferCall({ token, to, amount, symbol, decimals }) {
   const data = new ethers.Interface(['function transfer(address,uint256) returns (bool)'])
-    .encodeFunctionData('transfer', [to, balance]);
+    .encodeFunctionData('transfer', [to, amount]);
+  const shown = decimals == null ? amount.toString() : ethers.formatUnits(amount, decimals);
   return {
     target: token,
     value: 0n,
     data,
     contractName: symbol,
     functionName: 'transfer',
-    args: [to, `${ethers.formatUnits(balance, decimals)} ${symbol}`],
+    args: [to, `${shown} ${symbol}`],
     source: 'erc20'
   };
 }

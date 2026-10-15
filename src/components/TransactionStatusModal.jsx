@@ -4,6 +4,9 @@ import { useApp } from '../contexts/AppContext';
 import { executeWithRetry } from '../utils/providerUtils';
 import { isDelegatedTo } from '../utils/rescueTx';
 
+const RECEIPT_POLL_MS = 2000;
+const RECEIPT_TIMEOUT_MS = 180000;
+
 export function TransactionStatusModal({ txHash, compromisedAddress, delegateAddress, onClose }) {
   const { provider, currentChain } = useApp();
   const [status, setStatus] = useState(null); // 'success' or 'failed'
@@ -48,21 +51,16 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
     try {
       setChecking(true);
       
-      // Wait for transaction to be mined with retry logic
-      const receipt = await executeWithRetry(
-        provider,
-        async (p) => {
-          // First check if already mined
-          let receipt = await p.getTransactionReceipt(txHash);
-          if (receipt) {
-            return receipt;
-          }
-          
-          // Wait for transaction (up to 2 minutes)
-          return await p.waitForTransaction(txHash, 1, 120000);
-        },
-        3
-      );
+      // Poll for the receipt instead of waiting on block events: those depend on the RPC
+      // delivering new blocks, which some public endpoints and local nodes do not.
+      let receipt = null;
+      const deadline = Date.now() + RECEIPT_TIMEOUT_MS;
+      while (!receipt && Date.now() < deadline) {
+        receipt = await executeWithRetry(provider, (p) => p.getTransactionReceipt(txHash), 3);
+        if (!receipt) {
+          await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS));
+        }
+      }
 
       if (receipt) {
         if (receipt.status !== 1) {

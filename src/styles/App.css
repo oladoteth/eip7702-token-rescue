@@ -1982,3 +1982,51 @@ html {
   display: block;
   margin-top: 0.75rem;
 }
+
+/* Asset scanner */
+.scan-results {
+  margin-top: 1rem;
+}
+
+.scan-group {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.scan-group summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.scan-valuable {
+  border-color: var(--success);
+}
+
+.scan-spam {
+  border-color: var(--error);
+}
+
+.scan-table {
+  width: 100%;
+  margin-top: 0.5rem;
+  border-collapse: collapse;
+}
+
+.scan-table td {
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.scan-name {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.scan-amount {
+  text-align: right;
+  white-space: nowrap;
+}
