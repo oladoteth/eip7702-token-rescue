@@ -98,50 +98,52 @@ export const ERC721_ABI = [
 ];
 
 /**
- * Parse ABI from JSON string, JavaScript object notation, or array
- * @param {string|Array} abiInput - ABI as JSON string, JavaScript object notation, or array
- * @returns {Array} Parsed ABI
+ * Parse an ABI pasted by the user. Accepts a JSON ABI array, or human-readable
+ * signatures one per line (for example `function transfer(address to, uint256 amount)`).
+ * The input is never evaluated as code: this page holds private keys.
+ * @param {string|Array} abiInput - ABI as JSON string, human-readable signatures, or array
+ * @returns {Array} ABI in JSON form
  */
 export function parseABI(abiInput) {
-  // If already an array, return it
   if (Array.isArray(abiInput)) {
     return abiInput;
   }
-
-  // If not a string, throw error
   if (typeof abiInput !== 'string') {
     throw new Error('ABI must be a string or array');
   }
 
-  // Trim whitespace
   const trimmed = abiInput.trim();
-  
-  // Try parsing as JSON first (most common case)
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (!Array.isArray(parsed)) {
-      throw new Error('ABI must be an array');
-    }
-    return parsed;
-  } catch (jsonError) {
-    // If JSON parsing fails, try parsing as JavaScript object notation
-    // This handles cases where keys are not quoted (e.g., { inputs: [] } instead of { "inputs": [] })
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    let parsed;
     try {
-      // Use Function constructor to safely evaluate JavaScript object notation
-      // This is safer than eval as it creates a new function scope
-      // Note: This only works for valid JavaScript object/array literals
-      const parsed = new Function('return ' + trimmed)();
-      
-      if (!Array.isArray(parsed)) {
-        throw new Error('ABI must be an array');
-      }
-      
-      return parsed;
-    } catch (jsError) {
-      // If both fail, provide a helpful error message
-      throw new Error(`Invalid ABI format: ${jsonError.message}. Please ensure the ABI is valid JSON or JavaScript object notation.`);
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      throw new Error(`Invalid JSON ABI: ${error.message}`);
     }
+    // Accept a full compiler artifact as well as a bare ABI array.
+    const abi = Array.isArray(parsed) ? parsed : parsed?.abi;
+    if (!Array.isArray(abi)) {
+      throw new Error('ABI must be a JSON array');
+    }
+    return abi;
   }
+
+  const lines = trimmed
+    .split('\n')
+    .map((line) => line.trim().replace(/[;,]$/, ''))
+    .filter(Boolean);
+  // Fragment.from throws on bad input. ethers.Interface would skip bad lines with only
+  // a console warning, so a typo would silently drop a function.
+  const fragments = lines.map((line, index) => {
+    try {
+      return ethers.Fragment.from(line);
+    } catch (error) {
+      throw new Error(
+        `Invalid ABI on line ${index + 1}: "${line}". Paste a JSON ABI array or one human-readable signature per line. (${error.shortMessage || error.message})`
+      );
+    }
+  });
+  return JSON.parse(new ethers.Interface(fragments).formatJson());
 }
 
 /**

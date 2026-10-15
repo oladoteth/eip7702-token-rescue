@@ -1,5 +1,5 @@
 /* Modern Monochromatic Black & White Design */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* System fonts only: no third-party requests from a page that holds private keys. */
 
 :root {
   --bg-primary: #0a0a0a;
@@ -126,7 +126,7 @@ header p {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 .tabs button span {
@@ -221,7 +221,7 @@ button {
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 600;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   transition: var(--transition);
   display: inline-flex;
   align-items: center;
@@ -255,7 +255,7 @@ input, textarea, select {
   border-radius: 10px;
   color: var(--text-primary);
   font-size: 0.95rem;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   transition: var(--transition);
   margin: 0.5rem 0;
 }
@@ -298,7 +298,7 @@ select {
 
 .batcher-active p {
   margin: 0.5rem 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.875rem;
   color: var(--text-secondary);
   word-break: break-all;
@@ -310,7 +310,7 @@ select {
 
 .info p {
   margin: 0.5rem 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.875rem;
   color: var(--text-secondary);
   word-break: break-all;
@@ -663,7 +663,7 @@ select {
   background: var(--bg-tertiary);
   padding: 1rem 1.5rem;
   border-radius: 10px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   color: var(--text-primary);
   border: 1px solid var(--border-color);
@@ -966,7 +966,7 @@ html {
 
 /* Additional Utility Classes */
 .code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   background: var(--bg-secondary);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
@@ -1036,7 +1036,7 @@ html {
 }
 
 .abi-input, .tx-data-input {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.875rem;
   line-height: 1.6;
 }
@@ -1065,7 +1065,7 @@ html {
 }
 
 .address {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.85rem;
   color: var(--text-secondary);
   margin-top: 0.5rem;
@@ -1101,7 +1101,7 @@ html {
 }
 
 .function-item code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   color: var(--text-primary);
 }
@@ -1130,7 +1130,7 @@ html {
 
 .decoded-info li {
   margin: 0.5rem 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.875rem;
 }
 
@@ -1256,7 +1256,7 @@ html {
 }
 
 .address-code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   background: var(--bg-tertiary);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
@@ -1264,7 +1264,7 @@ html {
 }
 
 .full-address {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.75rem;
   color: var(--text-tertiary);
   word-break: break-all;
@@ -1278,7 +1278,7 @@ html {
 }
 
 .function-signature {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.75rem;
   color: var(--text-tertiary);
 }
@@ -1300,12 +1300,12 @@ html {
 
 .args-list li {
   margin: 0.25rem 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.85rem;
 }
 
 .data-preview {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.85rem;
   word-break: break-all;
   color: var(--text-secondary);
@@ -1438,7 +1438,7 @@ html {
   color: var(--success);
   word-break: break-all;
   text-decoration: none;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
 }
 
@@ -1648,7 +1648,7 @@ html {
 .confirmations {
   color: var(--text-tertiary);
   font-size: 0.95rem;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
 .tx-hash-display {
@@ -1661,7 +1661,7 @@ html {
 
 .tx-hash-display code {
   display: block;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   color: var(--text-primary);
   word-break: break-all;
@@ -1750,7 +1750,7 @@ html {
   border-radius: 10px;
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: var(--error);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   word-break: break-word;
 }
@@ -1860,7 +1860,7 @@ html {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   word-break: break-all;
 }
@@ -1890,7 +1890,7 @@ html {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   word-break: break-all;
 }
@@ -1936,4 +1936,49 @@ html {
   .copy-button {
     width: 100%;
   }
+}
+
+/* Pre-send batch review */
+.batch-review {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+}
+
+.review-list {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
+}
+
+.review-item {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.review-item p {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.review-ok {
+  border-left-color: var(--success);
+}
+
+.review-unknown {
+  border-left-color: var(--warning);
+}
+
+.review-danger {
+  border-left-color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.review-ack {
+  display: block;
+  margin-top: 0.75rem;
 }

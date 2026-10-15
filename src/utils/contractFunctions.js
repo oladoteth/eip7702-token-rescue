@@ -3,52 +3,8 @@
  * Extract and categorize functions from ABIs
  */
 
-/**
- * Parse ABI from string input (JSON or JavaScript object notation)
- * @param {string|Array} abiInput - ABI as JSON string, JavaScript object notation, or array
- * @returns {Array} Parsed ABI array
- */
-export function parseABI(abiInput) {
-  // If already an array, return it
-  if (Array.isArray(abiInput)) {
-    return abiInput;
-  }
-
-  // If not a string, throw error
-  if (typeof abiInput !== 'string') {
-    throw new Error('ABI must be a string or array');
-  }
-
-  // Trim whitespace
-  const trimmed = abiInput.trim();
-  
-  // Try parsing as JSON first (most common case)
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (!Array.isArray(parsed)) {
-      throw new Error('ABI must be an array');
-    }
-    return parsed;
-  } catch (jsonError) {
-    // If JSON parsing fails, try parsing as JavaScript object notation
-    // This handles cases where keys are not quoted (e.g., { inputs: [] } instead of { "inputs": [] })
-    try {
-      // Use Function constructor to safely evaluate JavaScript object notation
-      // This is safer than eval as it creates a new function scope
-      // Note: This only works for valid JavaScript object/array literals
-      const parsed = new Function('return ' + trimmed)();
-      
-      if (!Array.isArray(parsed)) {
-        throw new Error('ABI must be an array');
-      }
-      
-      return parsed;
-    } catch (jsError) {
-      // If both fail, provide a helpful error message
-      throw new Error(`Invalid ABI format: ${jsonError.message}. Please ensure the ABI is valid JSON or JavaScript object notation.`);
-    }
-  }
-}
+// One shared parser, so there is a single place that must never evaluate input.
+export { parseABI } from './contracts.js';
 
 /**
  * Get all functions from ABI

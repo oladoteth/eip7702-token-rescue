@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { buildRescueTx, describeRescueError } from '../utils/rescueTx';
+import { buildRescueTx, describeRescueError, estimateRescueGas } from '../utils/rescueTx';
+import { reviewCall } from '../utils/callReview';
 import { TransactionStatusModal } from './TransactionStatusModal';
 
 export function RescueExecutor({ gasSettings }) {
@@ -10,8 +11,21 @@ export function RescueExecutor({ gasSettings }) {
     batcherContract,
     batchCalls,
     currentChain,
-    provider
+    provider,
+    safeWallet
   } = useApp();
+
+  const reviews = useMemo(
+    () => batchCalls.map((call) => reviewCall(call, safeWallet.address)),
+    [batchCalls, safeWallet?.address]
+  );
+  const dangerCount = reviews.filter((review) => review.level === 'danger').length;
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  // Any change to the batch or destination needs a fresh review.
+  useEffect(() => {
+    setAcknowledged(false);
+  }, [batchCalls, safeWallet?.address]);
 
   const [executing, setExecuting] = useState(false);
   const [status, setStatus] = useState(null);
@@ -60,6 +74,11 @@ export function RescueExecutor({ gasSettings }) {
         calls: batchCalls
       });
 
+      // Simulate again right before sending: balances may have changed since the gas
+      // estimate, and a reverting batch would still cost the rescue wallet gas.
+      setStatus('Simulating the rescue...');
+      await estimateRescueGas(provider, txRequest, rescueWallet.address);
+
       setStatus('Sending rescue transaction from the rescue wallet...');
       const tx = await rescueWallet.wallet.sendTransaction({
         ...txRequest,
@@ -107,9 +126,43 @@ export function RescueExecutor({ gasSettings }) {
         </div>
       )}
 
+      <div className="batch-review">
+        <h4>Review Before Sending</h4>
+        <p>
+          Destination check against your safe wallet <code>{safeWallet.address}</code>.
+        </p>
+        <ol className="review-list">
+          {batchCalls.map((call, index) => (
+            <li key={index} className={`review-item review-${reviews[index].level}`}>
+              <strong>#{index + 1} {call.contractName || call.target}: {reviews[index].action}</strong>
+              {reviews[index].recipient && (
+                <span> to <code>{reviews[index].recipient}</code></span>
+              )}
+              <p>{reviews[index].message}</p>
+            </li>
+          ))}
+        </ol>
+        {dangerCount > 0 && (
+          <div className="error">
+            {dangerCount > 1 ? `${dangerCount} calls in this batch send` : '1 call in this batch sends'} assets
+            or approvals to an address that is not your safe wallet. If someone sent you this calldata, do not continue.
+          </div>
+        )}
+        <label className="review-ack">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+          />{' '}
+          {dangerCount > 0
+            ? `I understand that ${dangerCount} call${dangerCount > 1 ? 's' : ''} will send assets or approvals away from my safe wallet.`
+            : 'I have reviewed every call in this batch.'}
+        </label>
+      </div>
+
       <button
         onClick={handleExecuteRescue}
-        disabled={executing || !batcherContract || batchCalls.length === 0 || !gasSettings || !rescueWallet}
+        disabled={executing || !acknowledged || !batcherContract || batchCalls.length === 0 || !gasSettings || !rescueWallet}
         className="execute-button"
       >
         {executing ? 'Executing Rescue...' : 'Execute Rescue Transaction'}
