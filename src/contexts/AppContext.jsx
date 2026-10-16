@@ -161,9 +161,14 @@ export function AppProvider({ children }) {
   }, []);
 
   // Batch call management
-  // The native sweep stays last: earlier calls (unstake, claim) may release more ETH.
+  // Revokes go first: if the batch is split, the attacker loses the approvals before any
+  // later part runs. The native sweep stays last: earlier calls may release more ETH.
   const addBatchCall = useCallback((call) => {
     setBatchCalls(prev => {
+      if (call.source === 'revoke') {
+        const firstOther = prev.findIndex((c) => c.source !== 'revoke');
+        return firstOther === -1 ? [...prev, call] : [...prev.slice(0, firstOther), call, ...prev.slice(firstOther)];
+      }
       const sweepIndex = prev.findIndex((c) => c.source === 'native');
       if (call.source === 'native') {
         return sweepIndex === -1 ? [...prev, call] : prev;

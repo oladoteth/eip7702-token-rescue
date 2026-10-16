@@ -8,6 +8,7 @@ import { EnhancedContractLoader } from "./EnhancedContractLoader";
 import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
 import { TokenSweepInput } from "./TokenSweepInput";
 import { AssetScanner } from "./AssetScanner";
+import { ApprovalScanner } from "./ApprovalScanner";
 import { NativeSweep } from "./NativeSweep";
 import { PositionScanner } from "./PositionScanner";
 import { BatchTransactionViewer } from "./BatchTransactionViewer";
@@ -75,6 +76,7 @@ export function RescueTab() {
       {/* Step 6: Build Batch Transactions - Visible when the delegate is deployed */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
+          <ApprovalScanner />
           <AssetScanner />
           <PositionScanner />
           <NativeSweep />
@@ -152,8 +154,8 @@ export function RescueTab() {
           <div className="step">
             <h3>6. Choose What to Rescue</h3>
             <p>
-              Scan the compromised wallet for tokens and NFTs, scan Lido, Aave and Uniswap
-              positions, add the native coin sweep, or add custom calls for anything else.
+              Revoke the wallet's approvals, scan it for tokens and NFTs, scan Lido, Aave and
+              Uniswap positions, add the native coin sweep, or add custom calls for anything else.
             </p>
           </div>
           <div className="step">

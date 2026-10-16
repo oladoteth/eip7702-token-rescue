@@ -17,9 +17,11 @@ import {
   isDelegatedTo,
   nftTransferCalls,
   nativeSweepCall,
+  revokeCalls,
   encodeExecute,
   describeRescueError
 } from '../src/utils/rescueTx.js';
+import { confirmApprovals, PERMIT2 } from '../src/discovery/approvals.js';
 
 const PORT = 8547;
 const RPC = `http://127.0.0.1:${PORT}`;
@@ -68,6 +70,12 @@ try {
   await (await funder.sendTransaction({ to: compromised.address, value: ethers.parseEther('0.5') })).wait();
   await (await funder.sendTransaction({ to: payer.address, value: ethers.parseEther('1') })).wait();
 
+  // The attacker already holds approvals from the compromised wallet.
+  const attacker = ethers.Wallet.createRandom().connect(provider);
+  await (await funder.sendTransaction({ to: attacker.address, value: ethers.parseEther('0.1') })).wait();
+  await (await token.connect(compromised).approve(attacker.address, ethers.MaxUint256)).wait();
+  await (await nft.connect(compromised).setApprovalForAll(attacker.address, true)).wait();
+
   // 1. Delegate deploys to the predicted address, and a second call is a no-op.
   const deployed = await ensureDelegateDeployed(payer);
   assert.equal(deployed.address, predictDelegateAddress(payer.address));
@@ -81,7 +89,16 @@ try {
   const tokenAddress = await token.getAddress();
   const nftAddress = await nft.getAddress();
   const multiAddress = await multi.getAddress();
+  // Confirm on-chain which approvals are active (a fake pair must be dropped), then revoke.
+  const approvals = await confirmApprovals(provider, compromised.address, [
+    { kind: 'erc20', token: tokenAddress, spender: attacker.address },
+    { kind: 'operator', token: nftAddress, spender: attacker.address },
+    { kind: 'erc20', token: tokenAddress, spender: ethers.Wallet.createRandom().address },
+    { kind: 'erc20', token: nftAddress, spender: attacker.address }
+  ]);
+  assert.deepEqual(approvals.map((a) => a.kind).sort(), ['erc20', 'operator'], 'only the two real approvals');
   const calls = [
+    ...revokeCalls(approvals, PERMIT2),
     await buildErc20SweepCall(provider, tokenAddress, compromised.address, safe),
     ...nftTransferCalls([
       { type: 'ERC-721', token: nftAddress, tokenId: 7n, amount: 1n },
@@ -90,13 +107,14 @@ try {
     ], compromised.address, safe),
     nativeSweepCall(compromised.address, safe, 'ETH')
   ];
-  assert.equal(calls.length, 4, 'ERC-1155 items share one call');
+  assert.equal(calls.length, 6, 'two revokes, ERC-20, ERC-721, one ERC-1155 batch call, ETH sweep');
 
   // 3. One type-4 tx from the payer.
   const payerBefore = await provider.getBalance(payer.address);
   const tx = await buildRescueTx({ compromised, delegateAddress: deployed.address, calls });
   const { estimate, gasLimit } = await estimateRescueGas(provider, tx, payer.address);
   // ETH arrives after the batch was built. The sweep must take the balance at execution.
+  const compromisedEthAtBuild = await provider.getBalance(compromised.address);
   await (await funder.sendTransaction({ to: compromised.address, value: ethers.parseEther('0.25') })).wait();
   assert.ok(estimate > 100_000n, `estimate includes the delegated execution (got ${estimate})`);
   const receipt = await (await payer.sendTransaction({ ...tx, gasLimit })).wait();
@@ -110,11 +128,21 @@ try {
   assert.equal(await multi.balanceOf(safe, 1), 50n);
   assert.equal(await multi.balanceOf(safe, 2), 3n);
   assert.equal(await multi.balanceOf(compromised.address, 1), 0n);
-  assert.equal(await provider.getBalance(safe), ethers.parseEther('0.75'), 'sweep used the balance at execution time');
+  assert.equal(await provider.getBalance(safe), compromisedEthAtBuild + ethers.parseEther('0.25'), 'sweep used the balance at execution time');
   assert.equal(await provider.getBalance(compromised.address), 0n);
   assert.ok((await provider.getBalance(payer.address)) < payerBefore, 'payer paid gas');
   assert.ok(await isDelegatedTo(provider, compromised.address, deployed.address));
   console.log('ok  assets at safe address, compromised balance 0');
+
+  // Approvals are gone: tokens that arrive later cannot be pulled by the attacker.
+  assert.equal(await token.allowance(compromised.address, attacker.address), 0n);
+  assert.equal(await nft.isApprovedForAll(compromised.address, attacker.address), false);
+  await (await token.mint(compromised.address, ethers.parseEther('5'))).wait();
+  await assert.rejects(
+    token.connect(attacker).transferFrom(compromised.address, attacker.address, ethers.parseEther('5')),
+    /allowance/
+  );
+  console.log('ok  approvals revoked; attacker cannot pull tokens that arrive later');
 
   // 5. The attacker holds the compromised key. They must not be able to use our delegate.
   await (await funder.sendTransaction({ to: compromised.address, value: ethers.parseEther('0.1') })).wait();
@@ -124,11 +152,11 @@ try {
   );
   console.log('ok  compromised key cannot execute through the delegate');
 
-  // 6. A failing call is reported by position before anything is sent.
+  // 6. A failing call is reported by position before anything is sent (more than the wallet holds).
   const badTx = await buildRescueTx({
     compromised,
     delegateAddress: deployed.address,
-    calls: [{ target: tokenAddress, value: 0n, data: token.interface.encodeFunctionData('transfer', [safe, 1n]) }]
+    calls: [{ target: tokenAddress, value: 0n, data: token.interface.encodeFunctionData('transfer', [safe, ethers.parseEther('1000')]) }]
   });
   await assert.rejects(estimateRescueGas(provider, badTx, payer.address), /Call #1 in the batch reverted: balance/);
   console.log('ok  failing batch is caught at estimation with a readable reason');

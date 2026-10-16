@@ -55,7 +55,8 @@ export const NETWORKS = {
     ],
     explorer: 'https://optimistic.etherscan.io',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    discovery: { blockscout: 'https://optimism.blockscout.com', llama: 'optimism' }
+    // optimism.blockscout.com redirects here, and the redirect drops CORS headers in browsers.
+    discovery: { blockscout: 'https://explorer.optimism.io', llama: 'optimism' }
   },
   polygon: {
     chainId: 137,

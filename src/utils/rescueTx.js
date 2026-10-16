@@ -312,3 +312,68 @@ export function nativeSweepCall(compromisedAddress, to, symbol) {
     source: 'native'
   };
 }
+
+const revokeInterface = new ethers.Interface([
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function setApprovalForAll(address operator, bool approved)',
+  'function lockdown((address token, address spender)[] approvals)'
+]);
+
+/**
+ * Key for one approval, so the same revoke is never added twice.
+ * @returns {string}
+ */
+export function revokeKey(approval) {
+  return `revoke:${approval.kind}:${approval.token.toLowerCase()}:${approval.spender.toLowerCase()}`;
+}
+
+/**
+ * Batch calls that remove approvals confirmed by confirmApprovals: approve(spender, 0) for
+ * ERC-20 allowances, setApprovalForAll(operator, false) for operators, and one Permit2
+ * lockdown for every Permit2 allowance.
+ * @param {Array<{kind: 'erc20'|'operator'|'permit2', token: string, spender: string, symbol?: string}>} approvals
+ * @param {string} permit2 - Permit2 address
+ * @returns {object[]} Batch calls with source 'revoke'
+ */
+export function revokeCalls(approvals, permit2) {
+  const calls = [];
+  for (const a of approvals) {
+    if (a.kind === 'erc20') {
+      calls.push({
+        target: a.token,
+        value: 0n,
+        data: revokeInterface.encodeFunctionData('approve', [a.spender, 0n]),
+        contractName: a.symbol || 'ERC-20',
+        functionName: 'approve',
+        args: [a.spender, '0 (revoke)'],
+        source: 'revoke',
+        covers: [revokeKey(a)]
+      });
+    } else if (a.kind === 'operator') {
+      calls.push({
+        target: a.token,
+        value: 0n,
+        data: revokeInterface.encodeFunctionData('setApprovalForAll', [a.spender, false]),
+        contractName: a.symbol || 'NFT collection',
+        functionName: 'setApprovalForAll',
+        args: [a.spender, 'false (revoke)'],
+        source: 'revoke',
+        covers: [revokeKey(a)]
+      });
+    }
+  }
+  const permit2Pairs = approvals.filter((a) => a.kind === 'permit2');
+  if (permit2Pairs.length > 0) {
+    calls.push({
+      target: permit2,
+      value: 0n,
+      data: revokeInterface.encodeFunctionData('lockdown', [permit2Pairs.map((a) => [a.token, a.spender])]),
+      contractName: 'Permit2',
+      functionName: 'lockdown',
+      args: permit2Pairs.map((a) => `${a.symbol || a.token} -> ${a.spender}`),
+      source: 'revoke',
+      covers: permit2Pairs.map(revokeKey)
+    });
+  }
+  return calls;
+}

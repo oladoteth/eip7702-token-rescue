@@ -6,6 +6,7 @@ import {RescueDelegate} from "../RescueDelegate.sol";
 
 contract MockERC20 {
     mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
 
     function mint(address to, uint256 amount) external {
         balanceOf[to] += amount;
@@ -14,6 +15,20 @@ contract MockERC20 {
     function transfer(address to, uint256 amount) external returns (bool) {
         require(balanceOf[msg.sender] >= amount, "balance");
         balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(allowance[from][msg.sender] >= amount, "allowance");
+        require(balanceOf[from] >= amount, "balance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
         balanceOf[to] += amount;
         return true;
     }
@@ -32,13 +47,18 @@ interface IERC1155Receiver {
 
 contract MockERC721 {
     mapping(uint256 => address) public ownerOf;
+    mapping(address => mapping(address => bool)) public isApprovedForAll;
+
+    function setApprovalForAll(address operator, bool approved) external {
+        isApprovedForAll[msg.sender][operator] = approved;
+    }
 
     function mint(address to, uint256 id) external {
         ownerOf[id] = to;
     }
 
     function safeTransferFrom(address from, address to, uint256 id) external {
-        require(ownerOf[id] == from && msg.sender == from, "auth");
+        require(ownerOf[id] == from && (msg.sender == from || isApprovedForAll[from][msg.sender]), "auth");
         ownerOf[id] = to;
         if (to.code.length > 0) {
             require(

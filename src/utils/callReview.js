@@ -5,6 +5,7 @@
  */
 
 import { ethers } from 'ethers';
+import { PERMIT2 } from '../discovery/approvals.js';
 
 const reviewInterface = new ethers.Interface([
   'function transfer(address to, uint256 amount)',
@@ -22,7 +23,9 @@ const reviewInterface = new ethers.Interface([
   // Protocol adapters: Lido stETH shares and withdrawals, Aave v3 withdraw.
   'function transferShares(address to, uint256 sharesAmount)',
   'function claimWithdrawalsTo(uint256[] requestIds, uint256[] hints, address recipient)',
-  'function withdraw(address asset, uint256 amount, address to)'
+  'function withdraw(address asset, uint256 amount, address to)',
+  // Permit2: removes allowances for (token, spender) pairs.
+  'function lockdown((address token, address spender)[] approvals)'
 ]);
 
 const RECIPIENT_ARG = {
@@ -93,6 +96,12 @@ export function reviewCall(call, safeAddress) {
   const name = parsed.name;
   const recipient = parsed.args[RECIPIENT_ARG[name]];
 
+  if (name === 'lockdown') {
+    return same(call.target, PERMIT2) && value === 0n
+      ? { level: 'ok', action: 'revoke approvals', recipient: null, message: 'Removes Permit2 allowances.' }
+      : { level: 'unknown', action: 'lockdown', recipient: null, message: 'A lockdown call on a contract that is not Permit2.' };
+  }
+
   // The decoded arguments say nothing about native value: it goes to the called contract.
   if (value > 0n && !same(call.target, safeAddress)) {
     return {
@@ -108,6 +117,11 @@ export function reviewCall(call, safeAddress) {
   }
   if (name === 'approve' && recipient === ethers.ZeroAddress) {
     return { level: 'ok', action: 'revoke approval', recipient, message: 'Clears an NFT approval.' };
+  }
+  // Built only by the approval revoker, after allowance() confirmed an ERC-20 on-chain, so
+  // 0 is an amount here, not an NFT token ID. Custom and pasted calls never carry this source.
+  if (name === 'approve' && parsed.args.amountOrId === 0n && call.source === 'revoke' && value === 0n) {
+    return { level: 'ok', action: 'revoke approval', recipient, message: 'Removes an ERC-20 allowance.' };
   }
   if (name === 'approve' && parsed.args.amountOrId === 0n && !same(recipient, safeAddress)) {
     // ERC-20 and ERC-721 share this selector. On an NFT contract, 0 is a token ID, so this
