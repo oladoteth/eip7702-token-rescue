@@ -293,7 +293,11 @@ if (import.meta.env?.DEV) {
   // For a mainnet fork (anvil --fork-url ... --chain-id 31337), set
   // VITE_ANVIL_DISCOVERY_OF=ethereum to reuse that network's discovery sources.
   const forkOf = NETWORKS[import.meta.env.VITE_ANVIL_DISCOVERY_OF];
-  if (forkOf) NETWORKS.anvil.discovery = forkOf.discovery;
+  if (forkOf) {
+    NETWORKS.anvil.discovery = forkOf.discovery;
+    // Protocol adapters look up contract addresses by this chain id.
+    NETWORKS.anvil.positionsChainId = forkOf.chainId;
+  }
 }
 
 export function getNetworkByChainId(chainId) {

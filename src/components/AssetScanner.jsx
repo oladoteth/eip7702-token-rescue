@@ -4,6 +4,7 @@ import { useApp } from '../contexts/AppContext';
 import { canDiscover, discoverErc20, discoverNfts } from '../discovery/index.js';
 import { nftKey } from '../discovery/balances.js';
 import { erc20TransferCall, nftTransferCalls } from '../utils/rescueTx';
+import { coveredKeys, erc20Key } from '../utils/batchKeys';
 
 const TOKEN_GROUPS = [
   { category: 'valuable', title: 'Worth rescuing', open: true },
@@ -52,12 +53,10 @@ export function AssetScanner() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const tokenInBatch = (asset) =>
-    batchCalls.some((call) => call.source === 'erc20' && call.target.toLowerCase() === asset.token.toLowerCase());
-  const nftInBatch = (asset) => {
-    const key = nftKey(asset.token, asset.tokenId);
-    return batchCalls.some((call) => call.nftKeys?.includes(key));
-  };
+  // Also counts assets a protocol adapter already moves (stETH shares, aTokens, LP NFTs).
+  const covered = coveredKeys(batchCalls);
+  const tokenInBatch = (asset) => covered.has(erc20Key(asset.token));
+  const nftInBatch = (asset) => covered.has(nftKey(asset.token, asset.tokenId));
 
   const handleScan = async () => {
     abortRef.current?.abort();

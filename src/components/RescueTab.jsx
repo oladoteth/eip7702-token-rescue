@@ -9,6 +9,7 @@ import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
 import { TokenSweepInput } from "./TokenSweepInput";
 import { AssetScanner } from "./AssetScanner";
 import { NativeSweep } from "./NativeSweep";
+import { PositionScanner } from "./PositionScanner";
 import { BatchTransactionViewer } from "./BatchTransactionViewer";
 import { BatcherDeployment } from "./BatcherDeployment";
 import { GasSettings } from "./GasSettings";
@@ -83,6 +84,7 @@ export function RescueTab() {
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
           <AssetScanner />
+          <PositionScanner />
           <NativeSweep />
           <TokenSweepInput />
           <InteractiveBatchBuilder />

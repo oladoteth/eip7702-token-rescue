@@ -18,7 +18,11 @@ const reviewInterface = new ethers.Interface([
   'function increaseAllowance(address spender, uint256 addedValue)',
   'function setApprovalForAll(address operator, bool approved)',
   // RescueDelegate native sweep, called on the compromised account itself.
-  'function sweepNative(address to)'
+  'function sweepNative(address to)',
+  // Protocol adapters: Lido stETH shares and withdrawals, Aave v3 withdraw.
+  'function transferShares(address to, uint256 sharesAmount)',
+  'function claimWithdrawalsTo(uint256[] requestIds, uint256[] hints, address recipient)',
+  'function withdraw(address asset, uint256 amount, address to)'
 ]);
 
 const RECIPIENT_ARG = {
@@ -29,7 +33,10 @@ const RECIPIENT_ARG = {
   approve: 'spender',
   increaseAllowance: 'spender',
   setApprovalForAll: 'operator',
-  sweepNative: 'to'
+  sweepNative: 'to',
+  transferShares: 'to',
+  claimWithdrawalsTo: 'recipient',
+  withdraw: 'to'
 };
 
 const APPROVALS = new Set(['approve', 'increaseAllowance', 'setApprovalForAll']);

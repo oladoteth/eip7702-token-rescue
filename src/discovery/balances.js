@@ -25,7 +25,7 @@ const multicall = new ethers.Interface([
  * @param {Array<{target: string, data: string}>} calls
  * @returns {Promise<Array<{success: boolean, returnData: string}>>} Same order as `calls`
  */
-async function readMany(provider, calls) {
+export async function readMany(provider, calls) {
   const results = [];
   if ((await provider.getCode(MULTICALL3)) !== '0x') {
     for (let i = 0; i < calls.length; i += CALLS_PER_MULTICALL) {

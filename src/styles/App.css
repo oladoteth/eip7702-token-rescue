@@ -2064,3 +2064,18 @@ html {
 .gas-meter-high {
   background: var(--error);
 }
+
+/* Position scanner */
+.position-card {
+  display: block;
+}
+
+.position-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.position-action {
+  display: block;
+  margin: 0.5rem 0 0 1.5rem;
+}
