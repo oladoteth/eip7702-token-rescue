@@ -95,65 +95,6 @@ header p {
   margin: 0 auto;
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 0;
-  margin: 0;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  align-items: center;
-  justify-content: center;
-  gap: 2rem;
-  padding: 0 2rem;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  backdrop-filter: blur(10px);
-}
-
-.tabs button {
-  background: transparent;
-  border: none;
-  padding: 1.25rem 2rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  color: var(--text-secondary);
-  border-bottom: 3px solid transparent;
-  transition: var(--transition);
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-}
-
-.tabs button span {
-  font-size: 1.1rem;
-  opacity: 0.7;
-  transition: var(--transition);
-}
-
-.tabs button:hover {
-  color: black !important;
-  background: var(--bg-hover);
-}
-
-.tabs button:hover span {
-  opacity: 1;
-  transform: scale(1.1);
-}
-
-.tabs button.active {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.tabs button.active span {
-  opacity: 1;
-}
-
 /* Main Content */
 main {
   padding: 2rem;
@@ -551,206 +492,6 @@ select {
   margin-bottom: 1rem;
 }
 
-/* Donate Tab */
-.donate-tab {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-.donate-hero {
-  text-align: center;
-  padding: 3rem 2rem;
-  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-  border-radius: 20px;
-  margin-bottom: 2rem;
-  border: 1px solid var(--border-color);
-}
-
-.coffee-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-.donate-hero h2 {
-  font-size: 2.5rem;
-  margin-bottom: 0.75rem;
-  font-weight: 700;
-}
-
-.hero-subtitle {
-  color: var(--text-secondary);
-  font-size: 1.1rem;
-}
-
-.donate-card {
-  background: var(--bg-card);
-  border-radius: 20px;
-  padding: 2.5rem;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-lg);
-}
-
-.donate-section {
-  margin-bottom: 2.5rem;
-  padding-bottom: 2rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.donate-section:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.donate-text {
-  color: var(--text-secondary);
-  line-height: 1.8;
-  margin: 1rem 0;
-  font-size: 1rem;
-}
-
-.donate-text.highlight {
-  background: var(--bg-secondary);
-  padding: 1.25rem;
-  border-radius: 12px;
-  border-left: 4px solid var(--accent);
-  margin: 1.5rem 0;
-}
-
-.donate-text.highlight strong {
-  color: var(--text-primary);
-  font-size: 1.1rem;
-}
-
-.impact-section {
-  background: var(--bg-secondary);
-  padding: 2rem;
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-}
-
-.impact-icon {
-  font-size: 3rem;
-  text-align: center;
-  margin-bottom: 1rem;
-}
-
-.address-section {
-  background: var(--bg-secondary);
-  padding: 2rem;
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-}
-
-.address-container {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  margin: 1.5rem 0;
-  flex-wrap: wrap;
-}
-
-.wallet-address {
-  flex: 1;
-  min-width: 200px;
-  background: var(--bg-tertiary);
-  padding: 1rem 1.5rem;
-  border-radius: 10px;
-  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  word-break: break-all;
-}
-
-.copy-button {
-  padding: 1rem 1.5rem;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  white-space: nowrap;
-}
-
-.copy-button:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
-}
-
-.address-note {
-  color: var(--text-tertiary);
-  font-size: 0.9rem;
-  margin-top: 0.75rem;
-}
-
-.donate-actions {
-  margin: 2rem 0;
-  text-align: center;
-}
-
-.donate-button {
-  padding: 1.25rem 2.5rem;
-  font-size: 1.1rem;
-  background: var(--accent);
-  color: var(--bg-primary);
-  border-radius: 12px;
-  font-weight: 700;
-  box-shadow: var(--shadow-md);
-}
-
-.donate-button:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lg);
-}
-
-.donate-button span {
-  font-size: 1.3rem;
-}
-
-.connect-prompt {
-  padding: 1.5rem;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-}
-
-.donate-footer {
-  margin-top: 2.5rem;
-  padding-top: 2rem;
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-}
-
-.thank-you {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: var(--text-primary);
-}
-
-.heart {
-  animation: heartbeat 1.5s ease-in-out infinite;
-  display: inline-block;
-}
-
-@keyframes heartbeat {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-}
-
-.transparency {
-  color: var(--text-tertiary);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
 /* Footer */
 footer {
   text-align: center;
@@ -830,17 +571,7 @@ footer p {
     padding: 2rem 1.5rem;
   }
 
-  .tabs {
-    padding: 0 1rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
 
-  .tabs button {
-    padding: 1rem 1.25rem;
-    font-size: 0.875rem;
-    white-space: nowrap;
-  }
 
   main {
     padding: 1.5rem 1rem;
@@ -852,29 +583,14 @@ footer p {
     border-radius: 12px;
   }
 
-  .donate-tab {
-    padding: 1rem;
-  }
 
-  .donate-hero {
-    padding: 2rem 1.5rem;
-  }
 
-  .donate-hero h2 {
-    font-size: 1.75rem;
-  }
 
-  .donate-card {
-    padding: 1.5rem;
-  }
 
   .address-container {
     flex-direction: column;
   }
 
-  .wallet-address {
-    width: 100%;
-  }
 
   .steps {
     grid-template-columns: 1fr;
@@ -899,9 +615,6 @@ footer p {
     font-size: 0.875rem;
   }
 
-  .tabs button span {
-    font-size: 0.875rem;
-  }
 
   section {
     padding: 1.25rem;

@@ -206,24 +206,8 @@ export function AppProvider({ children }) {
     }
   }, [provider]);
 
-  // Create connectedWallet object for backward compatibility
-  // Uses rescueWallet
-  const connectedWallet = useMemo(() => {
-    if (rescueWalletView?.wallet) {
-      return {
-        address: rescueWalletView.address,
-        signer: rescueWalletView.wallet, // Wallet is a signer
-        provider: provider,
-        chainId: selectedChainId,
-        isConnected: true
-      };
-    }
-    return null;
-  }, [rescueWalletView, provider, selectedChainId]);
-
   const value = {
     // Wallet state
-    connectedWallet,
     isConnected: !!rescueWallet,
     address: rescueWallet?.address || null,
     chainId: selectedChainId,
