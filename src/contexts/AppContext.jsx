@@ -21,7 +21,10 @@ export function AppProvider({ children }) {
   const [safeWallet, setSafeWallet] = useState(null);
   // Bumped after a funding transfer so balance displays re-read.
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
-  const [provider, setProvider] = useState(null);
+  // Provider and its 7702 check, tagged with the chain they were set up for. They are only
+  // exposed when that chain is the current one, so a render right after a chain switch can
+  // never pair the new chain with the previous chain's provider.
+  const [providerState, setProviderState] = useState(null);
   const [signer, setSigner] = useState(null);
   const [batcherContract, setBatcherContract] = useState(null);
   const [contracts, setContracts] = useState([]);
@@ -30,8 +33,6 @@ export function AppProvider({ children }) {
   // User-supplied RPC for this session only: { url, chainId, network? }. network is set for
   // a chain that is not in networks.js.
   const [customRpc, setCustomRpc] = useState(null);
-  // RPC in use and its live EIP-7702 check: { url, eip7702: { supported, reason } } or { error }.
-  const [rpcStatus, setRpcStatus] = useState(null);
   
   // Track previous chainId for network change detection
   const prevChainIdRef = useRef(null);
@@ -51,26 +52,36 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!currentChain?.chainId) return;
     let isMounted = true;
-    setProvider(null);
-    setRpcStatus(null);
+    const chainId = currentChain.chainId;
 
     const rpcUrls = currentChain.rpcUrls || [currentChain.rpcUrl];
     console.log('[AppContext] Selecting RPC for chain:', currentChain.chainId);
     selectRescueProvider(rpcUrls, currentChain.chainId, probeEip7702)
       .then(({ provider: rpcProvider, url, eip7702 }) => {
         if (!isMounted) return;
-        setProvider(rpcProvider);
-        setRpcStatus({ url, eip7702 });
+        // Fail closed: an RPC that does not simulate 7702 never becomes the app's provider,
+        // so no code path can build, estimate or send a rescue through it.
+        if (eip7702.supported !== true) rpcProvider.destroy();
+        setProviderState({
+          chainId,
+          provider: eip7702.supported === true ? rpcProvider : null,
+          status: { url, eip7702 }
+        });
       })
       .catch((error) => {
         console.error('[AppContext] Error creating RPC provider:', error);
-        if (isMounted) setRpcStatus({ error: error.message });
+        if (isMounted) setProviderState({ chainId, provider: null, status: { error: error.message } });
       });
 
     return () => {
       isMounted = false;
     };
   }, [currentChain?.chainId, currentChain?.rpcUrls]);
+
+  const isCurrent = providerState?.chainId != null && providerState.chainId === currentChain?.chainId;
+  const provider = isCurrent ? providerState.provider : null;
+  // RPC in use and its live EIP-7702 check: { url, eip7702: { supported, reason } } or { error }.
+  const rpcStatus = isCurrent ? providerState.status : null;
 
   // Reconnect in-memory wallets to the new provider. No network calls.
   useEffect(() => {

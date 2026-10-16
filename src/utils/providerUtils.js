@@ -107,7 +107,8 @@ export async function executeWithRetry(provider, operation, maxRetries = 3) {
  * @param {number} chainId
  * @param {(provider: ethers.JsonRpcProvider) => Promise<{supported: boolean|null, reason: string}>} probe
  * @returns {Promise<{provider: ethers.JsonRpcProvider, url: string, eip7702: {supported: boolean|null, reason: string}}>}
- *   When no RPC supports 7702, returns the first reachable one with supported false.
+ *   When no RPC supports 7702, returns the first reachable one with supported false, for
+ *   reporting only. Callers must not use that provider for a rescue (AppContext destroys it).
  */
 export async function selectRescueProvider(rpcUrls, chainId, probe) {
   let fallback = null;

@@ -53,11 +53,18 @@ export async function probeEip7702(provider) {
       await provider.estimateGas(typeFour(MULTICALL3));
       return { supported: false, reason: 'The authorization had no effect: the account kept no code' };
     } catch (error) {
-      if (error?.code === 'CALL_EXCEPTION' || /revert/i.test(describe(error))) {
-        return { supported: true, reason: 'The delegated code ran' };
+      if (error?.code !== 'CALL_EXCEPTION') {
+        return { supported: false, reason: `Type-4 transactions rejected: ${describe(error)}` };
       }
-      return { supported: false, reason: `Type-4 transactions rejected: ${describe(error)}` };
     }
+    // Fail closed: the revert only proves the delegation if the same call to an account
+    // without code succeeds. An RPC that errors on every estimate must not pass.
+    try {
+      await provider.estimateGas({ from: sponsor, to: throwaway.address, value: 0n });
+    } catch (error) {
+      return { supported: false, reason: `The control call failed too, so the result proves nothing: ${describe(error)}` };
+    }
+    return { supported: true, reason: 'The delegated code ran' };
   }
 
   // Cost check where Multicall3 is missing: compare with the same call without the

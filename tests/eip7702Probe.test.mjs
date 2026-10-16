@@ -11,8 +11,21 @@ const stub = ({ multicall = true, estimateGas, network = { chainId: 1n } }) => (
 });
 
 // The probe gates the whole rescue, so each answer must come from observed behaviour.
+const revertsOnlyWhenDelegated = async (tx) => {
+  if (tx.authorizationList) throw reverted();
+  return 21000n;
+};
+
 test('delegated code running (revert) means supported', async () => {
-  assert.equal((await probeEip7702(stub({ estimateGas: async () => { throw reverted(); } }))).supported, true);
+  assert.equal((await probeEip7702(stub({ estimateGas: revertsOnlyWhenDelegated }))).supported, true);
+});
+
+// Fail closed: an RPC that errors on every estimate must not look like 7702 support.
+test('a revert is only proof when the same call without delegation succeeds', async () => {
+  const alwaysReverts = stub({ estimateGas: async () => { throw reverted(); } });
+  const result = await probeEip7702(alwaysReverts);
+  assert.equal(result.supported, false);
+  assert.match(result.reason, /control/);
 });
 
 // An RPC that drops authorizationList simulates a plain transfer, which succeeds.
@@ -38,7 +51,7 @@ test('without Multicall3 the authorization must add at least 12,500 gas over the
 
 test('the authorization is signed for a sender other than the authority', async () => {
   let seen;
-  await probeEip7702(stub({ estimateGas: async (tx) => { seen = tx; throw reverted(); } }));
+  await probeEip7702(stub({ estimateGas: async (tx) => { if (tx.authorizationList) seen = tx; return revertsOnlyWhenDelegated(tx); } }));
   assert.notEqual(seen.from.toLowerCase(), seen.to.toLowerCase());
   assert.equal(seen.authorizationList[0].nonce, 0n);
 });
