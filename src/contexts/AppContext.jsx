@@ -5,7 +5,8 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ethers } from 'ethers';
 import { getNetworkByChainId } from '../utils/networks';
-import { createProviderWithFallback } from '../utils/providerUtils';
+import { selectRescueProvider } from '../utils/providerUtils';
+import { probeEip7702 } from '../utils/eip7702Probe';
 import { RESCUE_DELEGATE_ABI } from '../contracts/rescueDelegate.js';
 
 
@@ -26,67 +27,59 @@ export function AppProvider({ children }) {
   const [contracts, setContracts] = useState([]);
   const [batchCalls, setBatchCalls] = useState([]);
   const [selectedChainId, setSelectedChainId] = useState(null); // Manually selected chain
+  // User-supplied RPC for this session only: { url, chainId, network? }. network is set for
+  // a chain that is not in networks.js.
+  const [customRpc, setCustomRpc] = useState(null);
+  // RPC in use and its live EIP-7702 check: { url, eip7702: { supported, reason } } or { error }.
+  const [rpcStatus, setRpcStatus] = useState(null);
   
   // Track previous chainId for network change detection
   const prevChainIdRef = useRef(null);
 
-  // Derive current chain from selectedChainId
+  // Derive current chain from selectedChainId. A custom RPC for that chain is tried first.
   const currentChain = useMemo(() => {
-    if (selectedChainId) {
-      return getNetworkByChainId(selectedChainId);
-    }
-    return null;
-  }, [selectedChainId]);
+    if (!selectedChainId) return null;
+    const custom = customRpc?.chainId === selectedChainId ? customRpc : null;
+    const base = getNetworkByChainId(selectedChainId) ?? custom?.network;
+    if (!base) return null;
+    if (!custom) return base;
+    return { ...base, rpcUrls: [custom.url, ...(base.rpcUrls ?? []).filter((url) => url !== custom.url)] };
+  }, [selectedChainId, customRpc]);
   
-  // Create provider from RPC URL when chain is selected (with fallback)
+  // Pick an RPC that answers for this chain and simulates EIP-7702. Only the chain and its
+  // RPC list trigger this: probing costs several RPC calls.
   useEffect(() => {
-    if (currentChain && currentChain.chainId) {
-      let isMounted = true;
-      
-      const createProvider = async () => {
-        try {
-          // Use fallback RPC URLs if available, otherwise use single rpcUrl
-          const rpcUrls = currentChain.rpcUrls || [currentChain.rpcUrl];
-          
-          console.log('[AppContext] Creating provider with fallback RPCs for chain:', currentChain.chainId);
-          const rpcProvider = await createProviderWithFallback(rpcUrls, currentChain.chainId);
-          
-          if (!isMounted) return;
-          
-          setProvider(rpcProvider);
-          
-          // If rescue wallet exists, reconnect it to the new provider
-          if (rescueWallet && rescueWallet.privateKey) {
-            const wallet = new ethers.Wallet(rescueWallet.privateKey, rpcProvider);
-            setRescueWallet({
-              ...rescueWallet,
-              wallet: wallet
-            });
-          }
-          
-          // If compromised wallet exists, reconnect it to the new provider
-          if (compromisedWallet && compromisedWallet.privateKey) {
-            const wallet = new ethers.Wallet(compromisedWallet.privateKey, rpcProvider);
-            setCompromisedWallet({
-              ...compromisedWallet,
-              wallet: wallet
-            });
-          }
-        } catch (error) {
-          console.error('[AppContext] Error creating RPC provider:', error);
-          if (isMounted) {
-            setProvider(null);
-          }
-        }
-      };
-      
-      createProvider();
-      
-      return () => {
-        isMounted = false;
-      };
-    }
-  }, [currentChain?.chainId, currentChain?.rpcUrl, currentChain?.rpcUrls, rescueWallet?.privateKey, compromisedWallet?.privateKey]);
+    if (!currentChain?.chainId) return;
+    let isMounted = true;
+    setProvider(null);
+    setRpcStatus(null);
+
+    const rpcUrls = currentChain.rpcUrls || [currentChain.rpcUrl];
+    console.log('[AppContext] Selecting RPC for chain:', currentChain.chainId);
+    selectRescueProvider(rpcUrls, currentChain.chainId, probeEip7702)
+      .then(({ provider: rpcProvider, url, eip7702 }) => {
+        if (!isMounted) return;
+        setProvider(rpcProvider);
+        setRpcStatus({ url, eip7702 });
+      })
+      .catch((error) => {
+        console.error('[AppContext] Error creating RPC provider:', error);
+        if (isMounted) setRpcStatus({ error: error.message });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentChain?.chainId, currentChain?.rpcUrls]);
+
+  // Reconnect in-memory wallets to the new provider. No network calls.
+  useEffect(() => {
+    if (!provider) return;
+    const reconnect = (current) =>
+      current?.privateKey ? { ...current, wallet: new ethers.Wallet(current.privateKey, provider) } : current;
+    setRescueWallet(reconnect);
+    setCompromisedWallet(reconnect);
+  }, [provider]);
 
   // Function to clear all application state and localStorage
   const clearAllState = useCallback((clearRescueWallet = false) => {
@@ -233,6 +226,9 @@ export function AppProvider({ children }) {
     
     // Network state
     currentChain,
+    customRpc,
+    rpcStatus,
+    setCustomRpc,
     
     // Provider state
     provider,

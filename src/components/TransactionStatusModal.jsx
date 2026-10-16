@@ -121,14 +121,16 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
             <p>Please wait while we verify your transaction status.</p>
             <div className="tx-hash-display">
               <code>{txHash}</code>
-              <a
-                href={`${currentChain?.explorer}/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="explorer-link"
-              >
-                View on Explorer →
-              </a>
+              {currentChain?.explorer && (
+                <a
+                  href={`${currentChain?.explorer}/tx/${txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="explorer-link"
+                >
+                  View on Explorer →
+                </a>
+              )}
             </div>
           </div>
         )}
@@ -141,14 +143,16 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
             </p>
             <div className="tx-hash-display">
               <code>{txHash}</code>
-              <a
-                href={`${currentChain?.explorer}/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="explorer-link"
-              >
-                View on Explorer →
-              </a>
+              {currentChain?.explorer && (
+                <a
+                  href={`${currentChain?.explorer}/tx/${txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="explorer-link"
+                >
+                  View on Explorer →
+                </a>
+              )}
             </div>
 
             <div className="social-prompt">
@@ -173,14 +177,16 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
             </p>
             <div className="tx-hash-display">
               <code>{txHash}</code>
-              <a
-                href={`${currentChain?.explorer}/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="explorer-link"
-              >
-                View on Explorer →
-              </a>
+              {currentChain?.explorer && (
+                <a
+                  href={`${currentChain?.explorer}/tx/${txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="explorer-link"
+                >
+                  View on Explorer →
+                </a>
+              )}
             </div>
 
             <div className="support-prompt">

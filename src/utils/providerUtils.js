@@ -22,19 +22,21 @@ export async function createProviderWithFallback(rpcUrls, chainId) {
     try {
       console.log(`[ProviderUtils] Trying RPC endpoint ${i + 1}/${urls.length}: ${url}`);
       // cacheTimeout -1: never reuse a cached nonce, balance or code read after a tx.
-      const provider = new ethers.JsonRpcProvider(url, undefined, { cacheTimeout: -1 });
+      // staticNetwork: the chain id is checked below, so ethers need not poll for it.
+      const provider = new ethers.JsonRpcProvider(url, chainId, { cacheTimeout: -1, staticNetwork: true });
       
-      // Test the provider by getting the network
-      const network = await Promise.race([
-        provider.getNetwork(),
-        new Promise((_, reject) => 
+      // Ask the RPC directly: with staticNetwork, getNetwork() would only echo `chainId`.
+      const reported = await Promise.race([
+        provider.send('eth_chainId', []),
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('RPC timeout')), 5000)
         )
       ]);
-      
+
       // Verify chain ID matches
-      if (Number(network.chainId) !== chainId) {
-        throw new Error(`Chain ID mismatch: expected ${chainId}, got ${Number(network.chainId)}`);
+      if (Number(reported) !== chainId) {
+        provider.destroy();
+        throw new Error(`Chain ID mismatch: expected ${chainId}, got ${Number(reported)}`);
       }
       
       console.log(`[ProviderUtils] Successfully connected to RPC: ${url}`);
@@ -96,3 +98,42 @@ export async function executeWithRetry(provider, operation, maxRetries = 3) {
   throw lastError || new Error('Operation failed after retries');
 }
 
+
+/**
+ * Picks the first RPC that both answers for `chainId` and simulates EIP-7702. An RPC that
+ * drops authorizations from eth_estimateGas would make the gas estimate and the pre-send
+ * safety simulation run without the delegation, so it is skipped when a better one exists.
+ * @param {string[]} rpcUrls - In order of preference
+ * @param {number} chainId
+ * @param {(provider: ethers.JsonRpcProvider) => Promise<{supported: boolean|null, reason: string}>} probe
+ * @returns {Promise<{provider: ethers.JsonRpcProvider, url: string, eip7702: {supported: boolean|null, reason: string}}>}
+ *   When no RPC supports 7702, returns the first reachable one with supported false.
+ */
+export async function selectRescueProvider(rpcUrls, chainId, probe) {
+  let fallback = null;
+  let lastError = null;
+
+  for (const url of rpcUrls) {
+    let provider;
+    try {
+      provider = await createProviderWithFallback([url], chainId);
+    } catch (error) {
+      lastError = error;
+      continue;
+    }
+    const eip7702 = await probe(provider);
+    if (eip7702.supported) {
+      fallback?.provider.destroy();
+      return { provider, url, eip7702 };
+    }
+    console.warn(`[ProviderUtils] ${url} does not simulate EIP-7702: ${eip7702.reason}`);
+    if (!fallback) {
+      fallback = { provider, url, eip7702 };
+    } else {
+      provider.destroy();
+    }
+  }
+
+  if (fallback) return fallback;
+  throw new Error(`All RPC endpoints failed. Last error: ${lastError?.message}`);
+}

@@ -15,8 +15,10 @@ import { GasSettings } from "./GasSettings";
 import { RescueExecutor } from "./RescueExecutor";
 
 export function RescueTab() {
-  const { rescueWallet, safeWallet, compromisedWallet, batchCalls, batcherContract, currentChain } =
+  const { rescueWallet, safeWallet, compromisedWallet, batchCalls, batcherContract, currentChain: selectedChain, rpcStatus } =
     useApp();
+  // Every step past chain selection needs an RPC that really simulates EIP-7702.
+  const currentChain = rpcStatus?.eip7702?.supported ? selectedChain : null;
   const [gasSettings, setGasSettings] = useState(null);
 
   // Reset gas settings when batch calls or batcher contract changes

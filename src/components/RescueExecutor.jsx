@@ -110,13 +110,16 @@ export function RescueExecutor({ gasSettings }) {
         {txHash && (
           <div className="tx-hash">
             <strong>Transaction Hash:</strong>
-            <a 
-              href={`${currentChain?.explorer}/tx/${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {txHash}
-            </a>
+            {currentChain?.explorer && (
+              <a 
+                href={`${currentChain?.explorer}/tx/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {txHash}
+              </a>
+            )}
+            {!currentChain?.explorer && <code>{txHash}</code>}
           </div>
         )}
       </div>
