@@ -1,7 +1,10 @@
 // Run with: node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateRescueGas, MAX_TX_GAS } from '../src/utils/rescueTx.js';
+import { estimateRescueGas, encodeExecute, MAX_TX_GAS } from '../src/utils/rescueTx.js';
+
+const TARGET = '0x000000000000000000000000000000000000dEaD';
+const tx = (calls = [{ target: TARGET, data: '0x' }]) => ({ data: encodeExecute(calls) });
 
 const stub = (estimate, blockGasLimit) => ({
   estimateGas: async () => estimate,
@@ -11,16 +14,24 @@ const stub = (estimate, blockGasLimit) => ({
 // Since Fusaka (EIP-7825) one transaction may use at most 2^24 gas on Ethereum, even though
 // blocks are larger. A batch over that is rejected by nodes, so it must be caught before sending.
 test('a batch over the per-transaction cap is refused even when the block limit is higher', async () => {
-  await assert.rejects(estimateRescueGas(stub(14_000_000n, 60_000_000n), {}, '0x0'), /more than one transaction can use \(16777216\)/);
+  await assert.rejects(estimateRescueGas(stub(14_000_000n, 60_000_000n), tx(), '0x0'), /more than one transaction can use \(16777216\)/);
 });
 
 test('the lower of block limit and per-transaction cap is the ceiling', async () => {
-  assert.equal((await estimateRescueGas(stub(100_000n, 60_000_000n), {}, '0x0')).maxGas, MAX_TX_GAS);
-  assert.equal((await estimateRescueGas(stub(100_000n, 10_000_000n), {}, '0x0')).maxGas, 10_000_000n);
+  assert.equal((await estimateRescueGas(stub(100_000n, 60_000_000n), tx(), '0x0')).maxGas, MAX_TX_GAS);
+  assert.equal((await estimateRescueGas(stub(100_000n, 10_000_000n), tx(), '0x0')).maxGas, 10_000_000n);
 });
 
 test('gas limit is the estimate plus a 25% buffer', async () => {
-  const { estimate, gasLimit } = await estimateRescueGas(stub(200_000n, 30_000_000n), {}, '0x0');
+  const { estimate, gasLimit } = await estimateRescueGas(stub(200_000n, 30_000_000n), tx(), '0x0');
   assert.equal(estimate, 200_000n);
   assert.equal(gasLimit, 250_000n);
+});
+
+// A hostile token can use little gas in the estimate and the full cap on-chain. The limit
+// must cover that, or the required calls after it could run out of gas.
+test('each optional call (revoke) adds its full gas cap to the limit', async () => {
+  const revoke = { target: TARGET, data: '0x', source: 'revoke' };
+  const { gasLimit } = await estimateRescueGas(stub(200_000n, 30_000_000n), tx([revoke, revoke, { target: TARGET, data: '0x' }]), '0x0');
+  assert.equal(gasLimit, 250_000n + 2n * 200_000n);
 });

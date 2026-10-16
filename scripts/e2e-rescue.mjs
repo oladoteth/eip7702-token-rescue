@@ -18,6 +18,7 @@ import {
   nftTransferCalls,
   nativeSweepCall,
   revokeCalls,
+  skippedCallIndexes,
   encodeExecute,
   describeRescueError
 } from '../src/utils/rescueTx.js';
@@ -60,9 +61,11 @@ try {
   const { abi: erc20Abi, bytecode: erc20Code } = artifact('MockERC20');
   const { abi: nftAbi, bytecode: nftCode } = artifact('MockERC721');
   const { abi: multiAbi, bytecode: multiCode } = artifact('MockERC1155');
+  const { abi: hostileAbi, bytecode: hostileCode } = artifact('HostileToken');
   const token = await new ethers.ContractFactory(erc20Abi, erc20Code, funder).deploy();
   const nft = await new ethers.ContractFactory(nftAbi, nftCode, funder).deploy();
   const multi = await new ethers.ContractFactory(multiAbi, multiCode, funder).deploy();
+  const hostile = await new ethers.ContractFactory(hostileAbi, hostileCode, funder).deploy();
   await (await token.mint(compromised.address, ethers.parseEther('1000'))).wait();
   await (await nft.mint(compromised.address, 7)).wait();
   await (await multi.mint(compromised.address, 1, 50)).wait();
@@ -97,8 +100,11 @@ try {
     { kind: 'erc20', token: nftAddress, spender: attacker.address }
   ]);
   assert.deepEqual(approvals.map((a) => a.kind).sort(), ['erc20', 'operator'], 'only the two real approvals');
+  // A token the attacker controls, whose approve() always reverts. Its revoke is optional,
+  // so it must not be able to sink the rescue.
+  const hostileRevoke = { kind: 'erc20', token: await hostile.getAddress(), spender: attacker.address };
   const calls = [
-    ...revokeCalls(approvals, PERMIT2),
+    ...revokeCalls([...approvals, hostileRevoke], PERMIT2),
     await buildErc20SweepCall(provider, tokenAddress, compromised.address, safe),
     ...nftTransferCalls([
       { type: 'ERC-721', token: nftAddress, tokenId: 7n, amount: 1n },
@@ -107,7 +113,7 @@ try {
     ], compromised.address, safe),
     nativeSweepCall(compromised.address, safe, 'ETH')
   ];
-  assert.equal(calls.length, 6, 'two revokes, ERC-20, ERC-721, one ERC-1155 batch call, ETH sweep');
+  assert.equal(calls.length, 7, 'three revokes, ERC-20, ERC-721, one ERC-1155 batch call, ETH sweep');
 
   // 3. One type-4 tx from the payer.
   const payerBefore = await provider.getBalance(payer.address);
@@ -132,6 +138,7 @@ try {
   assert.equal(await provider.getBalance(compromised.address), 0n);
   assert.ok((await provider.getBalance(payer.address)) < payerBefore, 'payer paid gas');
   assert.ok(await isDelegatedTo(provider, compromised.address, deployed.address));
+  assert.deepEqual(skippedCallIndexes(receipt, compromised.address), [2], 'only the hostile revoke was skipped');
   console.log('ok  assets at safe address, compromised balance 0');
 
   // Approvals are gone: tokens that arrive later cannot be pulled by the attacker.

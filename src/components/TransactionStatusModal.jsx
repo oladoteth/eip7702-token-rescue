@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../contexts/AppContext';
 import { executeWithRetry } from '../utils/providerUtils';
-import { isDelegatedTo } from '../utils/rescueTx';
+import { isDelegatedTo, skippedCallIndexes } from '../utils/rescueTx';
 
 const RECEIPT_POLL_MS = 2000;
 const RECEIPT_TIMEOUT_MS = 180000;
@@ -13,6 +13,7 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
   const [mounted, setMounted] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState(null);
+  const [skipped, setSkipped] = useState(0);
 
   // Creator info - Update these with your actual details
   const creatorTwitter = '@oladoteth'; // Replace with actual Twitter handle
@@ -75,6 +76,7 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
             'The compromised wallet probably sent another transaction first. Try again.'
           );
         } else {
+          setSkipped(skippedCallIndexes(receipt, compromisedAddress).length);
           setStatus('success');
         }
       } else {
@@ -139,7 +141,9 @@ export function TransactionStatusModal({ txHash, compromisedAddress, delegateAdd
           <div className="modal-status">
             <h2>Rescue Confirmed!</h2>
             <p className="success-message">
-              Your rescue transaction is confirmed on-chain and every call in the batch succeeded.
+              {skipped > 0
+                ? `Your rescue transaction is confirmed on-chain. ${skipped} approval revoke(s) failed and were skipped; every other call succeeded.`
+                : 'Your rescue transaction is confirmed on-chain and every call in the batch succeeded.'}
             </p>
             <div className="tx-hash-display">
               <code>{txHash}</code>

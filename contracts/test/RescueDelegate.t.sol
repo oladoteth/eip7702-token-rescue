@@ -146,6 +146,23 @@ contract MockStaking {
     }
 }
 
+/// Token contracts an attacker controls: they fail, burn gas, or return a huge blob.
+contract HostileToken {
+    function approve(address, uint256) external pure returns (bool) {
+        revert("hostile");
+    }
+
+    function burnGas() external pure {
+        while (true) {}
+    }
+
+    function returnBomb() external pure {
+        assembly {
+            return(0, 1000000)
+        }
+    }
+}
+
 contract RescueDelegateTest is Test {
     address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
@@ -173,12 +190,12 @@ contract RescueDelegateTest is Test {
 
     function _fullRescue() internal view returns (RescueDelegate.Call[] memory calls) {
         calls = new RescueDelegate.Call[](4);
-        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)));
-        calls[1] = RescueDelegate.Call(address(nft), 0, abi.encodeCall(MockERC721.safeTransferFrom, (compromised, safe, 7)));
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)), false);
+        calls[1] = RescueDelegate.Call(address(nft), 0, abi.encodeCall(MockERC721.safeTransferFrom, (compromised, safe, 7)), false);
         calls[2] = RescueDelegate.Call(
             address(multi), 0, abi.encodeCall(MockERC1155.safeTransferFrom, (compromised, safe, 1, 50, ""))
-        );
-        calls[3] = RescueDelegate.Call(safe, 1 ether, "");
+        , false);
+        calls[3] = RescueDelegate.Call(safe, 1 ether, "", false);
     }
 
     /// The core promise: one tx sent by the payer moves every asset class to the safe
@@ -219,8 +236,8 @@ contract RescueDelegateTest is Test {
     /// A partial rescue must not look like success: one bad call undoes the batch.
     function test_failedCallRevertsWholeBatch() public {
         RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](2);
-        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)));
-        calls[1] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1)));
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)), false);
+        calls[1] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1)), false);
 
         vm.signAndAttachDelegation(address(delegate), compromisedKey);
         vm.prank(payer);
@@ -253,8 +270,8 @@ contract RescueDelegateTest is Test {
     /// ETH that changes in between cannot make the whole rescue revert.
     function test_sweepNativeSendsBalanceAtExecutionTime() public {
         RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](2);
-        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)));
-        calls[1] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))));
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)), false);
+        calls[1] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))), false);
 
         vm.deal(compromised, 3 ether); // more than when the batch was "built" with 1 ether
         vm.signAndAttachDelegation(address(delegate), compromisedKey);
@@ -269,7 +286,7 @@ contract RescueDelegateTest is Test {
     function test_sweepNativeWithZeroBalanceDoesNotRevert() public {
         vm.deal(compromised, 0);
         RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](1);
-        calls[0] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))));
+        calls[0] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))), false);
         vm.signAndAttachDelegation(address(delegate), compromisedKey);
         vm.prank(payer);
         RescueDelegate(payable(compromised)).execute(calls);
@@ -290,6 +307,65 @@ contract RescueDelegateTest is Test {
         vm.prank(payer);
         vm.expectRevert(RescueDelegate.NotSelf.selector);
         RescueDelegate(payable(compromised)).sweepNative(payable(safe));
+    }
+
+    /// A revoke sent to a token the attacker controls must not be able to sink the rescue:
+    /// optional calls may fail without undoing the required calls around them.
+    function test_optionalCallFailureDoesNotRevertTheBatch() public {
+        HostileToken hostile = new HostileToken();
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](2);
+        calls[0] = RescueDelegate.Call(address(hostile), 0, abi.encodeCall(HostileToken.approve, (address(1), 0)), true);
+        calls[1] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)), false);
+
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        vm.expectEmit(true, false, false, false, compromised);
+        emit RescueDelegate.CallSkipped(0);
+        RescueDelegate(payable(compromised)).execute(calls);
+        assertEq(token.balanceOf(safe), 1_000e18);
+    }
+
+    /// Gas burning and return-data bombs are bounded by the optional-call gas cap.
+    function test_optionalCallsCannotBurnTheBatchGas() public {
+        HostileToken hostile = new HostileToken();
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](3);
+        calls[0] = RescueDelegate.Call(address(hostile), 0, abi.encodeCall(HostileToken.burnGas, ()), true);
+        calls[1] = RescueDelegate.Call(address(hostile), 0, abi.encodeCall(HostileToken.returnBomb, ()), true);
+        calls[2] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)), false);
+
+        uint256 cap = delegate.OPTIONAL_CALL_GAS();
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        uint256 before = gasleft();
+        RescueDelegate(payable(compromised)).execute{gas: 2_000_000}(calls);
+        assertLt(before - gasleft(), 2 * cap + 200_000);
+        assertEq(token.balanceOf(safe), 1_000e18);
+    }
+
+    /// Gas estimation searches for the least gas that succeeds. If an optional call could just
+    /// fail for lack of gas, the estimate could land where revokes are silently skipped.
+    function test_optionalCallNeedsItsFullGasCap() public {
+        // Read before the cheatcodes: they apply to the next external call.
+        uint256 cap = delegate.OPTIONAL_CALL_GAS();
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](1);
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.approve, (address(1), 0)), true);
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        vm.expectRevert(RescueDelegate.NotEnoughGasForOptionalCall.selector);
+        RescueDelegate(payable(compromised)).execute{gas: cap}(calls);
+    }
+
+    /// Required calls keep all-or-nothing behaviour.
+    function test_requiredCallFailureStillRevertsWithOptionalCallsPresent() public {
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](2);
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.approve, (address(1), 0)), true);
+        calls[1] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 2_000e18)), false);
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        vm.expectRevert(
+            abi.encodeWithSelector(RescueDelegate.CallFailed.selector, 1, abi.encodeWithSignature("Error(string)", "balance"))
+        );
+        RescueDelegate(payable(compromised)).execute(calls);
     }
 
     /// The app predicts the delegate address off-chain and reuses it across sessions,

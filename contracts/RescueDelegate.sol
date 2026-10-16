@@ -13,7 +13,14 @@ contract RescueDelegate {
         address target;
         uint256 value;
         bytes data;
+        /// Optional calls (approval revokes) may fail without undoing the batch. They get at
+        /// most OPTIONAL_CALL_GAS and their return data is not copied, so a hostile target
+        /// cannot burn the batch's gas or memory.
+        bool allowFailure;
     }
+
+    /// @notice Gas given to each optional call.
+    uint256 public constant OPTIONAL_CALL_GAS = 200_000;
 
     /// @notice The only address allowed to call `execute`.
     address public immutable controller;
@@ -21,6 +28,12 @@ contract RescueDelegate {
     error NotController();
     error NotSelf();
     error NativeTransferFailed();
+    /// @dev Raised when there is not enough gas left to give an optional call its full cap.
+    /// Without it, a gas estimate could settle where optional calls silently fail.
+    error NotEnoughGasForOptionalCall();
+
+    /// @notice An optional call failed and was skipped.
+    event CallSkipped(uint256 indexed index);
     /// @param index Position of the failed call in the batch.
     /// @param reason Raw revert data from the failed call.
     error CallFailed(uint256 index, bytes reason);
@@ -29,12 +42,29 @@ contract RescueDelegate {
         controller = controller_;
     }
 
-    /// @notice Runs every call in order. Any failed call reverts the whole batch.
+    /// @notice Runs every call in order. A failed required call reverts the whole batch; a
+    /// failed optional call is skipped.
     function execute(Call[] calldata calls) external {
         if (msg.sender != controller) revert NotController();
         for (uint256 i; i < calls.length; ++i) {
-            (bool ok, bytes memory reason) = calls[i].target.call{value: calls[i].value}(calls[i].data);
-            if (!ok) revert CallFailed(i, reason);
+            Call calldata c = calls[i];
+            if (c.allowFailure) {
+                // 64/63 covers the gas the EVM keeps back from a sub-call (EIP-150).
+                if (gasleft() < (OPTIONAL_CALL_GAS * 64) / 63 + 10_000) revert NotEnoughGasForOptionalCall();
+                if (!_callWithoutReturnData(c.target, c.value, c.data)) emit CallSkipped(i);
+            } else {
+                (bool ok, bytes memory reason) = c.target.call{value: c.value}(c.data);
+                if (!ok) revert CallFailed(i, reason);
+            }
+        }
+    }
+
+    function _callWithoutReturnData(address target, uint256 value, bytes calldata data) private returns (bool ok) {
+        uint256 gasCap = OPTIONAL_CALL_GAS;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            calldatacopy(ptr, data.offset, data.length)
+            ok := call(gasCap, target, value, ptr, data.length, 0, 0)
         }
     }
 

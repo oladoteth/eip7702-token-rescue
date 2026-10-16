@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { checkBalanceSufficient, getWalletBalance } from '../utils/balanceChecker';
 import { buildRescueTx, estimateRescueGas } from '../utils/rescueTx';
+import { planParts, rescueEstimator, classifyEstimateError } from '../utils/batchSplit';
 import { executeWithRetry } from '../utils/providerUtils';
 import { ethers } from 'ethers';
 
@@ -221,11 +222,62 @@ export function GasSettings({ onGasSettingsReady }) {
         ? feeData.maxPriorityFeePerGas
         : MIN_MAX_PRIORITY_FEE_PER_GAS;
 
+      // Fees do not depend on the batch size.
+      const finalMaxFeePerGas = gasMode === 'custom' && maxFeePerGas
+        ? ethers.parseUnits(Math.max(parseFloat(maxFeePerGas), 1).toString(), 'gwei')
+        : safeMaxFeePerGas;
+      const finalMaxPriorityFeePerGas = gasMode === 'custom' && maxPriorityFeePerGas
+        ? ethers.parseUnits(Math.max(parseFloat(maxPriorityFeePerGas), 1).toString(), 'gwei')
+        : safeMaxPriorityFeePerGas;
+
       // A failed simulation means the batch would revert on-chain, so stop here
-      // instead of falling back to a guessed gas limit.
-      const { estimate: rawEstimate, gasLimit: estimatedGasLimit, maxGas } = await estimateBatchGasLimit();
+      // instead of falling back to a guessed gas limit. A batch that is only too large
+      // for one transaction is planned as several.
+      let single;
+      try {
+        single = await estimateBatchGasLimit();
+      } catch (sizeError) {
+        const kind = classifyEstimateError(sizeError);
+        if (!(kind === 'too-large' || (kind === 'empty-revert' && batchCalls.length > 1))) throw sizeError;
+      }
       if (isStale()) return;
 
+      if (!single) {
+        const plan = await planParts(batchCalls, rescueEstimator({
+          compromised: compromisedWallet.wallet,
+          payerAddress: rescueWallet.address,
+          delegateAddress: batcherContract.address
+        }));
+        if (isStale()) return;
+        const totalGas = plan.parts.reduce((sum, part) => sum + part.gasLimit, 0n);
+        // Parts that depend on earlier ones are planned after those are mined.
+        const partsKnown = plan.rest.length === 0;
+        setGasEstimationDetails({ split: true, parts: plan.parts.length, partsKnown, totalGas });
+        const totalCost = totalGas * finalMaxFeePerGas;
+        setEstimatedCost({ gasLimit: totalGas, gasPrice: finalMaxFeePerGas, totalCost, formatted: ethers.formatEther(totalCost) });
+        const balanceInfo = await getWalletBalance(provider, rescueWallet.address);
+        if (isStale()) return;
+        const check = checkBalanceSufficient(balanceInfo.balance, totalCost);
+        setBalanceCheck(check);
+        if (!check.isSufficient) {
+          setWarning(
+            `⚠️ Insufficient balance for all parts! You need ${check.shortfallFormatted} ${currentChain?.nativeCurrency?.symbol || 'ETH'} more. ` +
+            `Current: ${check.currentBalance}, Required: ${check.estimatedCost}. Please fund your rescue wallet.`
+          );
+        }
+        onGasSettingsReady?.({
+          mode: gasMode,
+          maxFeePerGas: finalMaxFeePerGas,
+          maxPriorityFeePerGas: finalMaxPriorityFeePerGas,
+          split: true,
+          parts: plan.parts.length,
+          partsKnown,
+          estimatedCost: totalCost
+        });
+        return;
+      }
+
+      const { estimate: rawEstimate, gasLimit: estimatedGasLimit, maxGas } = single;
       setGasEstimationDetails({
         rawEstimate,
         bufferAmount: estimatedGasLimit - rawEstimate,
@@ -233,24 +285,10 @@ export function GasSettings({ onGasSettingsReady }) {
         maxGas
       });
 
-      // Determine final gas values based on mode
-      let finalMaxFeePerGas, finalMaxPriorityFeePerGas, finalGasLimit;
-      if (gasMode === 'automatic') {
-        finalMaxFeePerGas = safeMaxFeePerGas;
-        finalMaxPriorityFeePerGas = safeMaxPriorityFeePerGas;
-        finalGasLimit = estimatedGasLimit;
-      } else {
-        // Use custom values with minimums enforced
-        finalMaxFeePerGas = maxFeePerGas 
-          ? ethers.parseUnits(Math.max(parseFloat(maxFeePerGas), 1).toString(), 'gwei')
-          : safeMaxFeePerGas;
-        finalMaxPriorityFeePerGas = maxPriorityFeePerGas
-          ? ethers.parseUnits(Math.max(parseFloat(maxPriorityFeePerGas), 1).toString(), 'gwei')
-          : safeMaxPriorityFeePerGas;
-        finalGasLimit = gasLimit 
-          ? BigInt(Math.max(parseInt(gasLimit), Number(MIN_GAS_LIMIT)))
-          : estimatedGasLimit;
-      }
+      // A custom gas limit applies only to a single transaction.
+      const finalGasLimit = gasMode === 'custom' && gasLimit
+        ? BigInt(Math.max(parseInt(gasLimit), Number(MIN_GAS_LIMIT)))
+        : estimatedGasLimit;
 
       // Worst-case cost: the payer must hold gasLimit * maxFeePerGas for the tx to be accepted.
       const totalCost = finalGasLimit * finalMaxFeePerGas;
@@ -433,7 +471,24 @@ export function GasSettings({ onGasSettingsReady }) {
 
       {estimating && <div className="estimating">Estimating gas costs...</div>}
 
-      {gasEstimationDetails && (
+      {gasEstimationDetails?.split && (
+        <div className="gas-estimation-explanation">
+          <h4>Sent in Parts</h4>
+          <div className="estimation-details">
+            <p>
+              This batch is too large for one transaction. It will be sent as
+              {gasEstimationDetails.partsKnown ? ` ${gasEstimationDetails.parts}` : ` at least ${gasEstimationDetails.parts + 1}`} transactions,
+              each with a fresh delegation. Approval revokes go in the first.
+            </p>
+            <p><strong>Total Gas Limit:</strong> {gasEstimationDetails.totalGas.toString()} gas</p>
+            <p className="explanation-text">
+              Each part is simulated before sending. A custom gas limit is ignored when splitting.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {gasEstimationDetails && !gasEstimationDetails.split && (
         <div className="gas-estimation-explanation">
           <h4>Gas Limit Estimation</h4>
           <div className="estimation-details">

@@ -18,6 +18,9 @@ const delegateInterface = new ethers.Interface(RESCUE_DELEGATE_ABI);
 // Leaves room for estimation error without paying for a large unused limit.
 const GAS_BUFFER_PERCENT = 25n;
 
+// Gas the delegate gives each optional call (RescueDelegate.OPTIONAL_CALL_GAS).
+const OPTIONAL_CALL_GAS = 200_000n;
+
 // EIP-7825 (Fusaka) caps one transaction at 2^24 gas on Ethereum, below the block gas
 // limit. Applied on every chain: 16.7M gas is roughly 400 token transfers.
 export const MAX_TX_GAS = 16_777_216n;
@@ -82,7 +85,9 @@ export function encodeExecute(calls) {
     if (!ethers.isAddress(call.target)) {
       throw new Error(`Invalid target address: ${call.target}`);
     }
-    return [call.target, BigInt(call.value ?? 0), call.data ?? '0x'];
+    // Only approval revokes are optional: a hostile token must not be able to sink the
+    // rescue. Every other call stays all or nothing.
+    return [call.target, BigInt(call.value ?? 0), call.data ?? '0x', call.source === 'revoke'];
   });
   return delegateInterface.encodeFunctionData('execute', [tuples]);
 }
@@ -94,14 +99,16 @@ export function encodeExecute(calls) {
  * @param {ethers.Wallet} params.compromised - Connected compromised wallet (signs the authorization)
  * @param {string} params.delegateAddress - Payer's RescueDelegate address
  * @param {Array} params.calls - Calls run as the compromised account
+ * @param {number} [params.authorizationNonce] - Nonce to sign the authorization for. Defaults to
+ *   the account's pending nonce. Parts of a split batch use consecutive nonces.
  * @returns {Promise<object>} Transaction request without gas fields
  */
-export async function buildRescueTx({ compromised, delegateAddress, calls }) {
+export async function buildRescueTx({ compromised, delegateAddress, calls, authorizationNonce }) {
   const provider = compromised.provider;
   const { chainId } = await provider.getNetwork();
   // 'pending' so a queued tx from the attacker does not leave us with a stale nonce.
   // A stale nonce makes the chain skip the authorization without failing the tx.
-  const nonce = await provider.getTransactionCount(compromised.address, 'pending');
+  const nonce = authorizationNonce ?? await provider.getTransactionCount(compromised.address, 'pending');
   const authorization = await compromised.authorize({ address: delegateAddress, nonce, chainId });
 
   return {
@@ -126,6 +133,9 @@ export function describeRescueError(error) {
       const parsed = delegateInterface.parseError(data);
       if (parsed?.name === 'NotController') {
         return 'The gas payer is not the controller of this delegate.';
+      }
+      if (parsed?.name === 'NotEnoughGasForOptionalCall') {
+        return 'The gas limit is too low to run the approval revokes. Raise the gas limit.';
       }
       if (parsed?.name === 'CallFailed') {
         const [index, reason] = parsed.args;
@@ -160,13 +170,17 @@ export async function estimateRescueGas(provider, tx, payerAddress) {
   } catch (error) {
     throw new Error(describeRescueError(error));
   }
-  const gasLimit = estimate + (estimate * GAS_BUFFER_PERCENT) / 100n;
+  // An optional call may use up to its full cap on-chain even if it used little in the
+  // estimate, so that worst case is added on top, keeping the required calls covered.
+  const [calls] = delegateInterface.decodeFunctionData('execute', tx.data);
+  const optionalCalls = BigInt(calls.filter((c) => c.allowFailure).length);
+  const gasLimit = estimate + (estimate * GAS_BUFFER_PERCENT) / 100n + optionalCalls * OPTIONAL_CALL_GAS;
   const block = await provider.getBlock('latest');
   const maxGas = block && block.gasLimit < MAX_TX_GAS ? block.gasLimit : MAX_TX_GAS;
   if (gasLimit > maxGas) {
     throw new Error(
       `The batch needs ${gasLimit} gas, more than one transaction can use (${maxGas}). ` +
-      'Remove some assets and rescue them in a second batch.'
+      'It will be sent in parts.'
     );
   }
   return { estimate, gasLimit, maxGas };
@@ -362,8 +376,10 @@ export function revokeCalls(approvals, permit2) {
       });
     }
   }
-  const permit2Pairs = approvals.filter((a) => a.kind === 'permit2');
-  if (permit2Pairs.length > 0) {
+  // One optional call has a fixed gas cap, so long lockdown lists are split.
+  const allPermit2 = approvals.filter((a) => a.kind === 'permit2');
+  for (let i = 0; i < allPermit2.length; i += 20) {
+    const permit2Pairs = allPermit2.slice(i, i + 20);
     calls.push({
       target: permit2,
       value: 0n,
@@ -376,4 +392,18 @@ export function revokeCalls(approvals, permit2) {
     });
   }
   return calls;
+}
+
+/**
+ * Indexes of optional calls (approval revokes) that failed and were skipped in a mined
+ * rescue transaction.
+ * @param {ethers.TransactionReceipt} receipt
+ * @param {string} account - Compromised account (the delegate emits from it)
+ * @returns {number[]}
+ */
+export function skippedCallIndexes(receipt, account) {
+  const topic = delegateInterface.getEvent('CallSkipped').topicHash;
+  return receipt.logs
+    .filter((log) => log.address.toLowerCase() === account.toLowerCase() && log.topics[0] === topic)
+    .map((log) => Number(BigInt(log.topics[1])));
 }

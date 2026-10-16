@@ -1,6 +1,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { buildRescueTx, describeRescueError, estimateRescueGas } from '../utils/rescueTx';
+import { executeInParts } from '../utils/batchSplit';
+
+const PART_STATUS = {
+  signing: 'Signing',
+  sent: 'Sent, waiting for confirmation',
+  confirmed: 'Confirmed',
+  reverted: 'Reverted',
+  failed: 'Not sent',
+  timeout: 'No receipt yet: check the explorer',
+  'not-delegated': 'Mined, but the delegation was not applied, so its calls did not run'
+};
 import { reviewCall } from '../utils/callReview';
 import { TransactionStatusModal } from './TransactionStatusModal';
 
@@ -33,6 +44,7 @@ export function RescueExecutor({ gasSettings }) {
   const [error, setError] = useState(null);
   const [txHash, setTxHash] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [parts, setParts] = useState(null);
 
   const handleExecuteRescue = async () => {
     if (!rescueWallet) {
@@ -64,6 +76,36 @@ export function RescueExecutor({ gasSettings }) {
     setError(null);
     setStatus('Preparing rescue transaction...');
     setTxHash(null);
+
+    if (gasSettings.split) {
+      setParts([]);
+      try {
+        setStatus('Sending the rescue in parts...');
+        const progress = await executeInParts({
+          compromised: compromisedWallet.wallet,
+          payer: rescueWallet.wallet,
+          delegateAddress: batcherContract.address,
+          calls: batchCalls,
+          fees: { maxFeePerGas: gasSettings.maxFeePerGas, maxPriorityFeePerGas: gasSettings.maxPriorityFeePerGas },
+          onUpdate: setParts
+        });
+        const confirmed = progress.filter((p) => p.status === 'confirmed').length;
+        const skipped = progress.reduce((sum, p) => sum + (p.skipped ?? 0), 0);
+        if (confirmed === progress.length && progress.length > 0) {
+          setStatus(`Rescue confirmed in ${confirmed} transactions.` + (skipped ? ` ${skipped} approval revoke(s) failed and were skipped.` : ''));
+        } else {
+          setStatus(null);
+          setError(`${confirmed} of ${progress.length} parts confirmed. Assets in confirmed parts are at the safe wallet; see the list below for the rest.`);
+        }
+      } catch (err) {
+        setError(describeRescueError(err));
+        setStatus(null);
+        console.error('Rescue execution error:', err);
+      } finally {
+        setExecuting(false);
+      }
+      return;
+    }
 
     try {
       // The compromised key signs an EIP-7702 authorization to our delegate. The rescue
@@ -130,6 +172,25 @@ export function RescueExecutor({ gasSettings }) {
         </div>
       )}
 
+      {parts && parts.length > 0 && (
+        <ol className="review-list part-list">
+          {parts.map((part) => (
+            <li key={part.index} className={`review-item review-${part.status === 'confirmed' ? 'ok' : ['sent', 'signing'].includes(part.status) ? 'unknown' : 'danger'}`}>
+              <strong>Part {part.index + 1}: {part.calls} calls</strong> {PART_STATUS[part.status] ?? part.status}
+              {part.hash && (
+                <p>
+                  {currentChain?.explorer
+                    ? <a href={`${currentChain.explorer}/tx/${part.hash}`} target="_blank" rel="noopener noreferrer">{part.hash}</a>
+                    : <code>{part.hash}</code>}
+                </p>
+              )}
+              {part.skipped > 0 && <p>{part.skipped} approval revoke(s) failed and were skipped.</p>}
+              {part.error && <p>{part.error}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+
       <div className="batch-review">
         <h4>Review Before Sending</h4>
         <p>
@@ -171,7 +232,11 @@ export function RescueExecutor({ gasSettings }) {
         disabled={executing || !acknowledged || !batcherContract || batchCalls.length === 0 || !gasSettings || !rescueWallet}
         className="execute-button"
       >
-        {executing ? 'Executing Rescue...' : 'Execute Rescue Transaction'}
+        {executing
+          ? 'Executing Rescue...'
+          : gasSettings?.split
+            ? `Execute in ${gasSettings.partsKnown ? gasSettings.parts : `${gasSettings.parts}+`} Transactions`
+            : 'Execute Rescue Transaction'}
       </button>
 
       <div className="info-box">
