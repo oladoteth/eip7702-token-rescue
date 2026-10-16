@@ -76,6 +76,23 @@ async function getFeeDataSafe(provider) {
   }
 }
 
+// Share of the per-transaction gas ceiling this batch uses.
+function GasMeter({ used, max }) {
+  const percent = Number((used * 10000n) / max) / 100;
+  const level = percent >= 80 ? 'high' : percent >= 50 ? 'medium' : 'low';
+  return (
+    <div className="gas-meter">
+      <div className="gas-meter-bar" role="meter" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`gas-meter-fill gas-meter-${level}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+      <p>
+        Uses {percent.toFixed(1)}% of the {Number(max).toLocaleString()} gas one transaction can use.
+        {level === 'high' && ' Close to the limit: adding more assets may need a second batch.'}
+      </p>
+    </div>
+  );
+}
+
 export function GasSettings({ onGasSettingsReady }) {
   const {
     rescueWallet,
@@ -206,13 +223,14 @@ export function GasSettings({ onGasSettingsReady }) {
 
       // A failed simulation means the batch would revert on-chain, so stop here
       // instead of falling back to a guessed gas limit.
-      const { estimate: rawEstimate, gasLimit: estimatedGasLimit } = await estimateBatchGasLimit();
+      const { estimate: rawEstimate, gasLimit: estimatedGasLimit, maxGas } = await estimateBatchGasLimit();
       if (isStale()) return;
 
       setGasEstimationDetails({
         rawEstimate,
         bufferAmount: estimatedGasLimit - rawEstimate,
-        finalGasLimit: estimatedGasLimit
+        finalGasLimit: estimatedGasLimit,
+        maxGas
       });
 
       // Determine final gas values based on mode
@@ -422,6 +440,7 @@ export function GasSettings({ onGasSettingsReady }) {
             <p><strong>Raw Estimate:</strong> {gasEstimationDetails.rawEstimate.toString()} gas</p>
             <p><strong>Buffer Applied:</strong> +{gasEstimationDetails.bufferAmount.toString()} gas</p>
             <p><strong>Final Gas Limit:</strong> {gasEstimationDetails.finalGasLimit.toString()} gas</p>
+            <GasMeter used={gasEstimationDetails.finalGasLimit} max={gasEstimationDetails.maxGas} />
             <p className="explanation-text">
               We simulate the full rescue transaction, including the delegation, then add a 25% buffer
               so small differences between simulation and execution do not make it run out of gas.

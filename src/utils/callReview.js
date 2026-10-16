@@ -16,7 +16,9 @@ const reviewInterface = new ethers.Interface([
   'function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)',
   'function approve(address spender, uint256 amountOrId)',
   'function increaseAllowance(address spender, uint256 addedValue)',
-  'function setApprovalForAll(address operator, bool approved)'
+  'function setApprovalForAll(address operator, bool approved)',
+  // RescueDelegate native sweep, called on the compromised account itself.
+  'function sweepNative(address to)'
 ]);
 
 const RECIPIENT_ARG = {
@@ -26,7 +28,8 @@ const RECIPIENT_ARG = {
   safeBatchTransferFrom: 'to',
   approve: 'spender',
   increaseAllowance: 'spender',
-  setApprovalForAll: 'operator'
+  setApprovalForAll: 'operator',
+  sweepNative: 'to'
 };
 
 const APPROVALS = new Set(['approve', 'increaseAllowance', 'setApprovalForAll']);
@@ -115,7 +118,11 @@ export function reviewCall(call, safeAddress) {
       level: 'ok',
       action: name,
       recipient,
-      message: APPROVALS.has(name) ? 'Grants an approval to your safe wallet.' : 'Sends assets to your safe wallet.'
+      message: APPROVALS.has(name)
+        ? 'Grants an approval to your safe wallet.'
+        : name === 'sweepNative'
+          ? 'Sends the whole native coin balance to your safe wallet.'
+          : 'Sends assets to your safe wallet.'
     };
   }
   return {

@@ -2036,3 +2036,31 @@ html {
   padding: 0.25rem 0.75rem;
   font-size: 0.85rem;
 }
+
+/* Gas meter */
+.gas-meter {
+  margin-top: 0.75rem;
+}
+
+.gas-meter-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.gas-meter-fill {
+  height: 100%;
+}
+
+.gas-meter-low {
+  background: var(--success);
+}
+
+.gas-meter-medium {
+  background: var(--warning);
+}
+
+.gas-meter-high {
+  background: var(--error);
+}

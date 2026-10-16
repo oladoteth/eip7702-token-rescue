@@ -82,3 +82,10 @@ test('approve(other, 0) is not reported as a safe revocation', () => {
   // Approving the zero address is the real ERC-721 revocation and is safe.
   assert.equal(reviewCall(call(iface.encodeFunctionData('approve', [ethers.ZeroAddress, 7n])), SAFE).level, 'ok');
 });
+
+// The native sweep is a call to the compromised account itself; only the "to" decides.
+test('native sweep to the safe wallet is ok, to anyone else is danger', () => {
+  const sweep = new ethers.Interface(['function sweepNative(address)']);
+  assert.equal(reviewCall(call(sweep.encodeFunctionData('sweepNative', [SAFE]), 0n, COMPROMISED), SAFE).level, 'ok');
+  assert.equal(reviewCall(call(sweep.encodeFunctionData('sweepNative', [ATTACKER]), 0n, COMPROMISED), SAFE).level, 'danger');
+});

@@ -164,8 +164,18 @@ export function AppProvider({ children }) {
   }, []);
 
   // Batch call management
+  // The native sweep stays last: earlier calls (unstake, claim) may release more ETH.
   const addBatchCall = useCallback((call) => {
-    setBatchCalls(prev => [...prev, call]);
+    setBatchCalls(prev => {
+      const sweepIndex = prev.findIndex((c) => c.source === 'native');
+      if (call.source === 'native') {
+        return sweepIndex === -1 ? [...prev, call] : prev;
+      }
+      if (sweepIndex === -1) {
+        return [...prev, call];
+      }
+      return [...prev.slice(0, sweepIndex), call, ...prev.slice(sweepIndex)];
+    });
   }, []);
 
   const removeBatchCall = useCallback((index) => {

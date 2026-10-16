@@ -16,6 +16,7 @@ import {
   buildErc20SweepCall,
   isDelegatedTo,
   nftTransferCalls,
+  nativeSweepCall,
   encodeExecute,
   describeRescueError
 } from '../src/utils/rescueTx.js';
@@ -87,7 +88,7 @@ try {
       { type: 'ERC-1155', token: multiAddress, tokenId: 1n, amount: 50n },
       { type: 'ERC-1155', token: multiAddress, tokenId: 2n, amount: 3n }
     ], compromised.address, safe),
-    { target: safe, value: await provider.getBalance(compromised.address), data: '0x' }
+    nativeSweepCall(compromised.address, safe, 'ETH')
   ];
   assert.equal(calls.length, 4, 'ERC-1155 items share one call');
 
@@ -95,6 +96,8 @@ try {
   const payerBefore = await provider.getBalance(payer.address);
   const tx = await buildRescueTx({ compromised, delegateAddress: deployed.address, calls });
   const { estimate, gasLimit } = await estimateRescueGas(provider, tx, payer.address);
+  // ETH arrives after the batch was built. The sweep must take the balance at execution.
+  await (await funder.sendTransaction({ to: compromised.address, value: ethers.parseEther('0.25') })).wait();
   assert.ok(estimate > 100_000n, `estimate includes the delegated execution (got ${estimate})`);
   const receipt = await (await payer.sendTransaction({ ...tx, gasLimit })).wait();
   assert.equal(receipt.status, 1);
@@ -107,7 +110,7 @@ try {
   assert.equal(await multi.balanceOf(safe, 1), 50n);
   assert.equal(await multi.balanceOf(safe, 2), 3n);
   assert.equal(await multi.balanceOf(compromised.address, 1), 0n);
-  assert.equal(await provider.getBalance(safe), ethers.parseEther('0.5'));
+  assert.equal(await provider.getBalance(safe), ethers.parseEther('0.75'), 'sweep used the balance at execution time');
   assert.equal(await provider.getBalance(compromised.address), 0n);
   assert.ok((await provider.getBalance(payer.address)) < payerBefore, 'payer paid gas');
   assert.ok(await isDelegatedTo(provider, compromised.address, deployed.address));

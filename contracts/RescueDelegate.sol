@@ -19,6 +19,8 @@ contract RescueDelegate {
     address public immutable controller;
 
     error NotController();
+    error NotSelf();
+    error NativeTransferFailed();
     /// @param index Position of the failed call in the batch.
     /// @param reason Raw revert data from the failed call.
     error CallFailed(uint256 index, bytes reason);
@@ -34,6 +36,18 @@ contract RescueDelegate {
             (bool ok, bytes memory reason) = calls[i].target.call{value: calls[i].value}(calls[i].data);
             if (!ok) revert CallFailed(i, reason);
         }
+    }
+
+    /// @notice Sends the account's whole native balance, read when this runs, to `to`.
+    /// @dev Called from inside `execute` as a call to the account itself, so a balance that
+    /// changed after the batch was built cannot make the rescue revert. Only the account can
+    /// call it: the holder of its key can already move this ETH directly, so that is no new power.
+    function sweepNative(address payable to) external {
+        if (msg.sender != address(this)) revert NotSelf();
+        uint256 amount = address(this).balance;
+        if (amount == 0) return;
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert NativeTransferFailed();
     }
 
     receive() external payable {}

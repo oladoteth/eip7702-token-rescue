@@ -196,6 +196,49 @@ contract RescueDelegateTest is Test {
         assertEq(multi.balanceOf(compromised, 1), 50);
     }
 
+    /// The native sweep reads the balance when it runs, not when the batch was built, so
+    /// ETH that changes in between cannot make the whole rescue revert.
+    function test_sweepNativeSendsBalanceAtExecutionTime() public {
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](2);
+        calls[0] = RescueDelegate.Call(address(token), 0, abi.encodeCall(MockERC20.transfer, (safe, 1_000e18)));
+        calls[1] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))));
+
+        vm.deal(compromised, 3 ether); // more than when the batch was "built" with 1 ether
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        RescueDelegate(payable(compromised)).execute(calls);
+
+        assertEq(safe.balance, 3 ether);
+        assertEq(compromised.balance, 0);
+        assertEq(token.balanceOf(safe), 1_000e18);
+    }
+
+    function test_sweepNativeWithZeroBalanceDoesNotRevert() public {
+        vm.deal(compromised, 0);
+        RescueDelegate.Call[] memory calls = new RescueDelegate.Call[](1);
+        calls[0] = RescueDelegate.Call(compromised, 0, abi.encodeCall(RescueDelegate.sweepNative, (payable(safe))));
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        RescueDelegate(payable(compromised)).execute(calls);
+        assertEq(safe.balance, 0);
+    }
+
+    /// Only the account itself may sweep: the controller goes through execute, and no other
+    /// caller can pull ETH out of a delegated account.
+    function test_sweepNativeOnlyFromTheAccountItself() public {
+        vm.signAndAttachDelegation(address(delegate), compromisedKey);
+        vm.prank(payer);
+        RescueDelegate(payable(compromised)).execute(new RescueDelegate.Call[](0));
+
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(RescueDelegate.NotSelf.selector);
+        RescueDelegate(payable(compromised)).sweepNative(payable(makeAddr("stranger")));
+
+        vm.prank(payer);
+        vm.expectRevert(RescueDelegate.NotSelf.selector);
+        RescueDelegate(payable(compromised)).sweepNative(payable(safe));
+    }
+
     /// The app predicts the delegate address off-chain and reuses it across sessions,
     /// so the CREATE2 address must depend only on the controller.
     function test_create2AddressIsDeterministicPerController() public {

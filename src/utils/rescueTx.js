@@ -18,6 +18,10 @@ const delegateInterface = new ethers.Interface(RESCUE_DELEGATE_ABI);
 // Leaves room for estimation error without paying for a large unused limit.
 const GAS_BUFFER_PERCENT = 25n;
 
+// EIP-7825 (Fusaka) caps one transaction at 2^24 gas on Ethereum, below the block gas
+// limit. Applied on every chain: 16.7M gas is roughly 400 token transfers.
+export const MAX_TX_GAS = 16_777_216n;
+
 function delegateInitCode(controller) {
   const args = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [controller]);
   return ethers.concat([RESCUE_DELEGATE_BYTECODE, args]);
@@ -146,7 +150,8 @@ export function describeRescueError(error) {
  * @param {ethers.Provider} provider
  * @param {object} tx - Result of buildRescueTx
  * @param {string} payerAddress
- * @returns {Promise<{estimate: bigint, gasLimit: bigint}>}
+ * @returns {Promise<{estimate: bigint, gasLimit: bigint, maxGas: bigint}>} maxGas is the most
+ *   one transaction may use here: the block gas limit or MAX_TX_GAS, whichever is lower.
  */
 export async function estimateRescueGas(provider, tx, payerAddress) {
   let estimate;
@@ -157,10 +162,14 @@ export async function estimateRescueGas(provider, tx, payerAddress) {
   }
   const gasLimit = estimate + (estimate * GAS_BUFFER_PERCENT) / 100n;
   const block = await provider.getBlock('latest');
-  if (block && gasLimit > block.gasLimit) {
-    throw new Error(`The batch needs ${gasLimit} gas, more than the block gas limit of ${block.gasLimit}. Split it into smaller batches.`);
+  const maxGas = block && block.gasLimit < MAX_TX_GAS ? block.gasLimit : MAX_TX_GAS;
+  if (gasLimit > maxGas) {
+    throw new Error(
+      `The batch needs ${gasLimit} gas, more than one transaction can use (${maxGas}). ` +
+      'Remove some assets and rescue them in a second batch.'
+    );
   }
-  return { estimate, gasLimit };
+  return { estimate, gasLimit, maxGas };
 }
 
 /**
@@ -281,4 +290,25 @@ export function nftTransferCalls(nfts, from, to) {
     });
   }
   return calls;
+}
+
+/**
+ * Batch call that sends the compromised account's whole native balance to the safe wallet.
+ * The amount is read when the transaction runs, not now, so ETH that arrives or leaves in
+ * between cannot make the rescue revert. Keep it last, after anything that releases ETH.
+ * @param {string} compromisedAddress - The call targets the account itself
+ * @param {string} to - Safe wallet
+ * @param {string} symbol - Native coin symbol, for display
+ * @returns {object} A batch call
+ */
+export function nativeSweepCall(compromisedAddress, to, symbol) {
+  return {
+    target: compromisedAddress,
+    value: 0n,
+    data: delegateInterface.encodeFunctionData('sweepNative', [to]),
+    contractName: symbol,
+    functionName: 'sweepNative',
+    args: [to, `entire ${symbol} balance when the rescue runs`],
+    source: 'native'
+  };
 }
