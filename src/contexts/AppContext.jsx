@@ -49,10 +49,13 @@ export function AppProvider({ children }) {
   
   // Pick an RPC that answers for this chain and simulates EIP-7702. Only the chain and its
   // RPC list trigger this: probing costs several RPC calls.
+  // Identifies the exact chain and RPC list a provider was checked for.
+  const rpcKey = currentChain ? `${currentChain.chainId}|${(currentChain.rpcUrls || [currentChain.rpcUrl]).join(',')}` : null;
+
   useEffect(() => {
     if (!currentChain?.chainId) return;
     let isMounted = true;
-    const chainId = currentChain.chainId;
+    const key = rpcKey;
 
     const rpcUrls = currentChain.rpcUrls || [currentChain.rpcUrl];
     console.log('[AppContext] Selecting RPC for chain:', currentChain.chainId);
@@ -63,34 +66,36 @@ export function AppProvider({ children }) {
         // so no code path can build, estimate or send a rescue through it.
         if (eip7702.supported !== true) rpcProvider.destroy();
         setProviderState({
-          chainId,
+          key,
           provider: eip7702.supported === true ? rpcProvider : null,
           status: { url, eip7702 }
         });
       })
       .catch((error) => {
         console.error('[AppContext] Error creating RPC provider:', error);
-        if (isMounted) setProviderState({ chainId, provider: null, status: { error: error.message } });
+        if (isMounted) setProviderState({ key, provider: null, status: { error: error.message } });
       });
 
     return () => {
       isMounted = false;
     };
-  }, [currentChain?.chainId, currentChain?.rpcUrls]);
+  }, [rpcKey]);
 
-  const isCurrent = providerState?.chainId != null && providerState.chainId === currentChain?.chainId;
+  // Exposed only for the exact chain and RPC list it was checked for. During a switch, or
+  // while a changed RPC list is re-checked, there is no provider rather than a stale one.
+  const isCurrent = providerState != null && providerState.key === rpcKey;
   const provider = isCurrent ? providerState.provider : null;
   // RPC in use and its live EIP-7702 check: { url, eip7702: { supported, reason } } or { error }.
   const rpcStatus = isCurrent ? providerState.status : null;
 
-  // Reconnect in-memory wallets to the new provider. No network calls.
-  useEffect(() => {
-    if (!provider) return;
-    const reconnect = (current) =>
-      current?.privateKey ? { ...current, wallet: new ethers.Wallet(current.privateKey, provider) } : current;
-    setRescueWallet(reconnect);
-    setCompromisedWallet(reconnect);
-  }, [provider]);
+  // Signing wallets are derived from the current verified provider on every render, never
+  // stored, so they cannot point at a previous chain's RPC. null when there is no provider.
+  const connect = useCallback(
+    (stored) => stored && { ...stored, wallet: stored.privateKey && provider ? new ethers.Wallet(stored.privateKey, provider) : null },
+    [provider]
+  );
+  const rescueWalletView = useMemo(() => connect(rescueWallet), [connect, rescueWallet]);
+  const compromisedWalletView = useMemo(() => connect(compromisedWallet), [connect, compromisedWallet]);
 
   // Function to clear all application state and localStorage
   const clearAllState = useCallback((clearRescueWallet = false) => {
@@ -216,17 +221,17 @@ export function AppProvider({ children }) {
   // Create connectedWallet object for backward compatibility
   // Uses rescueWallet
   const connectedWallet = useMemo(() => {
-    if (rescueWallet && rescueWallet.wallet && provider) {
+    if (rescueWalletView?.wallet) {
       return {
-        address: rescueWallet.address,
-        signer: rescueWallet.wallet, // Wallet is a signer
+        address: rescueWalletView.address,
+        signer: rescueWalletView.wallet, // Wallet is a signer
         provider: provider,
         chainId: selectedChainId,
         isConnected: true
       };
     }
     return null;
-  }, [rescueWallet, provider, selectedChainId]);
+  }, [rescueWalletView, provider, selectedChainId]);
 
   const value = {
     // Wallet state
@@ -245,9 +250,9 @@ export function AppProvider({ children }) {
     provider,
     signer,
     
-    // App state
-    rescueWallet,
-    compromisedWallet,
+    // App state. Wallets carry a `wallet` signer for the current verified provider, or null.
+    rescueWallet: rescueWalletView,
+    compromisedWallet: compromisedWalletView,
     safeWallet,
     balanceRefreshKey,
     batcherContract,
