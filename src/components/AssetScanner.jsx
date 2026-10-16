@@ -132,8 +132,8 @@ export function AssetScanner() {
     <div className="asset-scanner">
       <h3>Scan Compromised Wallet</h3>
       <p className="description">
-        Finds the tokens and NFTs this wallet holds and checks every one on-chain. Only the wallet address is
-        sent to Blockscout and DefiLlama, never a key.
+        Finds the tokens and NFTs this wallet holds and checks every one on-chain. Blockscout receives the
+        wallet address and DefiLlama receives token addresses. No key is ever sent.
       </p>
       <button onClick={handleScan} disabled={scanning}>
         {scanning ? 'Scanning...' : hasResults ? 'Scan Again' : 'Scan Wallet'}
