@@ -1,20 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useApp } from "../contexts/AppContext";
 import { ChainSelector } from "./ChainSelector";
 import { RescueWalletInput } from "./RescueWalletInput";
 import { CompromisedWalletInput } from "./CompromisedWalletInput";
 import { SafeWalletInput } from "./SafeWalletInput";
-import { EnhancedContractLoader } from "./EnhancedContractLoader";
-import { InteractiveBatchBuilder } from "./InteractiveBatchBuilder";
-import { TokenSweepInput } from "./TokenSweepInput";
-import { AssetScanner } from "./AssetScanner";
-import { ApprovalScanner } from "./ApprovalScanner";
-import { NativeSweep } from "./NativeSweep";
-import { PositionScanner } from "./PositionScanner";
-import { BatchTransactionViewer } from "./BatchTransactionViewer";
-import { BatcherDeployment } from "./BatcherDeployment";
-import { GasSettings } from "./GasSettings";
-import { RescueExecutor } from "./RescueExecutor";
+
+// Steps after the wallets are entered load on demand, so the first screen needs less code.
+const named = (load, name) => lazy(() => load().then((module) => ({ default: module[name] })));
+const BatcherDeployment = named(() => import("./BatcherDeployment"), "BatcherDeployment");
+const EnhancedContractLoader = named(() => import("./EnhancedContractLoader"), "EnhancedContractLoader");
+const InteractiveBatchBuilder = named(() => import("./InteractiveBatchBuilder"), "InteractiveBatchBuilder");
+const TokenSweepInput = named(() => import("./TokenSweepInput"), "TokenSweepInput");
+const AssetScanner = named(() => import("./AssetScanner"), "AssetScanner");
+const ApprovalScanner = named(() => import("./ApprovalScanner"), "ApprovalScanner");
+const NativeSweep = named(() => import("./NativeSweep"), "NativeSweep");
+const PositionScanner = named(() => import("./PositionScanner"), "PositionScanner");
+const BatchTransactionViewer = named(() => import("./BatchTransactionViewer"), "BatchTransactionViewer");
+const GasSettings = named(() => import("./GasSettings"), "GasSettings");
+const RescueExecutor = named(() => import("./RescueExecutor"), "RescueExecutor");
 
 export function RescueTab() {
   const { rescueWallet, safeWallet, compromisedWallet, batchCalls, batcherContract, currentChain: selectedChain, rpcStatus } =
@@ -59,6 +62,7 @@ export function RescueTab() {
         </section>
       )}
 
+      <Suspense fallback={<p className="hint">Loading...</p>}>
       {/* Step 4: Deploy/Set Rescue Delegate - Visible when compromised wallet is set */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && (
         <section className="batcher-section">
@@ -105,6 +109,7 @@ export function RescueTab() {
           <RescueExecutor gasSettings={gasSettings} />
         </section>
       )}
+      </Suspense>
 
       {/* Info Section - Always visible */}
       <section className="info-section">
