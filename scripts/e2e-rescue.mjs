@@ -15,6 +15,7 @@ import {
   estimateRescueGas,
   buildErc20SweepCall,
   isDelegatedTo,
+  nftTransferCalls,
   encodeExecute,
   describeRescueError
 } from '../src/utils/rescueTx.js';
@@ -55,10 +56,14 @@ try {
   // Set up the compromised wallet: tokens, an NFT, some ETH. The payer gets gas money.
   const { abi: erc20Abi, bytecode: erc20Code } = artifact('MockERC20');
   const { abi: nftAbi, bytecode: nftCode } = artifact('MockERC721');
+  const { abi: multiAbi, bytecode: multiCode } = artifact('MockERC1155');
   const token = await new ethers.ContractFactory(erc20Abi, erc20Code, funder).deploy();
   const nft = await new ethers.ContractFactory(nftAbi, nftCode, funder).deploy();
+  const multi = await new ethers.ContractFactory(multiAbi, multiCode, funder).deploy();
   await (await token.mint(compromised.address, ethers.parseEther('1000'))).wait();
   await (await nft.mint(compromised.address, 7)).wait();
+  await (await multi.mint(compromised.address, 1, 50)).wait();
+  await (await multi.mint(compromised.address, 2, 3)).wait();
   await (await funder.sendTransaction({ to: compromised.address, value: ethers.parseEther('0.5') })).wait();
   await (await funder.sendTransaction({ to: payer.address, value: ethers.parseEther('1') })).wait();
 
@@ -70,18 +75,21 @@ try {
   assert.equal(again.txHash, null, 'second call reuses the existing delegate');
   console.log('ok  delegate deployed at', deployed.address);
 
-  // 2. Build the batch: full ERC-20 balance, the NFT, then all native ETH.
+  // 2. Build the batch the way the app does: full ERC-20 balance, the ERC-721, both
+  //    ERC-1155 items in one batch call, then all native ETH.
   const tokenAddress = await token.getAddress();
   const nftAddress = await nft.getAddress();
+  const multiAddress = await multi.getAddress();
   const calls = [
     await buildErc20SweepCall(provider, tokenAddress, compromised.address, safe),
-    {
-      target: nftAddress,
-      value: 0n,
-      data: nft.interface.encodeFunctionData('safeTransferFrom', [compromised.address, safe, 7])
-    },
+    ...nftTransferCalls([
+      { type: 'ERC-721', token: nftAddress, tokenId: 7n, amount: 1n },
+      { type: 'ERC-1155', token: multiAddress, tokenId: 1n, amount: 50n },
+      { type: 'ERC-1155', token: multiAddress, tokenId: 2n, amount: 3n }
+    ], compromised.address, safe),
     { target: safe, value: await provider.getBalance(compromised.address), data: '0x' }
   ];
+  assert.equal(calls.length, 4, 'ERC-1155 items share one call');
 
   // 3. One type-4 tx from the payer.
   const payerBefore = await provider.getBalance(payer.address);
@@ -96,6 +104,9 @@ try {
   assert.equal(await token.balanceOf(safe), ethers.parseEther('1000'));
   assert.equal(await token.balanceOf(compromised.address), 0n);
   assert.equal(await nft.ownerOf(7), safe);
+  assert.equal(await multi.balanceOf(safe, 1), 50n);
+  assert.equal(await multi.balanceOf(safe, 2), 3n);
+  assert.equal(await multi.balanceOf(compromised.address, 1), 0n);
   assert.equal(await provider.getBalance(safe), ethers.parseEther('0.5'));
   assert.equal(await provider.getBalance(compromised.address), 0n);
   assert.ok((await provider.getBalance(payer.address)) < payerBefore, 'payer paid gas');

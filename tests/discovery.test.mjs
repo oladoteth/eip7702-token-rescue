@@ -127,3 +127,80 @@ test('Blockscout HTTP errors surface instead of returning an empty wallet', asyn
   globalThis.fetch = async () => new Response('busy', { status: 503 });
   await assert.rejects(listBlockscoutTokens('https://eth.blockscout.com', addr()), /HTTP 503/);
 });
+
+// ---- NFTs ----
+import { classifyNfts } from '../src/discovery/classify.js';
+import { listBlockscoutNfts } from '../src/discovery/blockscout.js';
+import { nftKey } from '../src/discovery/balances.js';
+import { nftTransferCalls } from '../src/utils/rescueTx.js';
+import { reviewCall } from '../src/utils/callReview.js';
+
+const nft = (overrides = {}) => ({ type: 'ERC-721', token: addr(), name: 'Collection', symbol: 'C', tokenId: 1n, ...overrides });
+
+// Same rule as tokens: an NFT the chain does not confirm must never become a call.
+test('NFTs not confirmed on-chain are dropped; ERC-1155 amount comes from the chain', () => {
+  const owned = nft({ tokenId: 7n });
+  const soldAlready = nft({ tokenId: 8n });
+  const failedCall = nft({ tokenId: 9n });
+  const multi = nft({ type: 'ERC-1155', tokenId: 3n });
+  const holdings = new Map([
+    [nftKey(owned.token, 7n), 1n],
+    [nftKey(soldAlready.token, 8n), 0n],
+    [nftKey(failedCall.token, 9n), null],
+    [nftKey(multi.token, 3n), 25n]
+  ]);
+  const assets = classifyNfts([owned, soldAlready, failedCall, multi], holdings);
+  assert.deepEqual(assets.map((a) => [a.tokenId, a.amount]).sort(), [[3n, 25n], [7n, 1n]]);
+});
+
+test('scam-named NFT collections are spam and sorted last', () => {
+  const real = nft({ name: 'Azuki' });
+  const scam = nft({ name: 'Claim your reward at bayc-mint.xyz' });
+  const holdings = new Map([[nftKey(real.token, 1n), 1n], [nftKey(scam.token, 1n), 1n]]);
+  assert.deepEqual(classifyNfts([scam, real], holdings).map((a) => a.category), ['nft', 'spam']);
+});
+
+// Every NFT call must pass the pre-send review as a transfer to the safe wallet,
+// and ERC-1155 items from one collection go out in a single batch call.
+test('NFT transfer calls: one per ERC-721, one batch per ERC-1155 collection, all to the safe wallet', () => {
+  const from = addr();
+  const safe = addr();
+  const collection1155 = addr();
+  const calls = nftTransferCalls([
+    nft({ tokenId: 1n }),
+    nft({ tokenId: 2n }),
+    { type: 'ERC-1155', token: collection1155, name: 'Items', tokenId: 5n, amount: 3n },
+    { type: 'ERC-1155', token: collection1155, name: 'Items', tokenId: 6n, amount: 1n }
+  ], from, safe);
+
+  assert.equal(calls.length, 3);
+  const batch = calls.find((c) => c.source === 'erc1155');
+  const decoded = new ethers.Interface(['function safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)'])
+    .decodeFunctionData('safeBatchTransferFrom', batch.data);
+  assert.equal(decoded[0], from);
+  assert.equal(decoded[1], safe);
+  assert.deepEqual([...decoded[2]], [5n, 6n]);
+  assert.deepEqual([...decoded[3]], [3n, 1n]);
+  assert.deepEqual(batch.nftKeys, [nftKey(collection1155, 5n), nftKey(collection1155, 6n)]);
+  for (const call of calls) {
+    assert.equal(reviewCall(call, safe).level, 'ok', call.functionName);
+  }
+});
+
+test('Blockscout NFT listing maps instances and follows pages', async () => {
+  const token = addr();
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls++;
+    assert.match(String(url), /\/nft\?type=ERC-721%2CERC-1155/);
+    return new Response(JSON.stringify({
+      items: [{ id: String(calls * 10), token: { address_hash: token.toLowerCase(), name: 'N', symbol: 'N', type: 'ERC-721' }, token_type: 'ERC-721', value: '1' }],
+      next_page_params: calls === 1 ? { token_type: 'ERC-721', token_id: '10', items_count: 50 } : null
+    }));
+  };
+  const { candidates, truncated } = await listBlockscoutNfts('https://eth.blockscout.com', addr());
+  assert.equal(calls, 2);
+  assert.equal(truncated, false);
+  assert.deepEqual(candidates.map((c) => c.tokenId), [10n, 20n]);
+  assert.equal(candidates[0].token, token);
+});

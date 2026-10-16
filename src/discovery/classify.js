@@ -3,6 +3,7 @@
  */
 
 import { ethers } from 'ethers';
+import { nftKey } from './balances.js';
 
 // Tokens worth at least this much are pre-selected.
 export const MIN_VALUABLE_USD = 1;
@@ -63,5 +64,46 @@ export function classifyErc20(candidates, balances, prices) {
 
   return assets.sort(
     (a, b) => CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category] || (b.valueUsd ?? 0) - (a.valueUsd ?? 0)
+  );
+}
+
+/**
+ * @typedef {object} NftAsset
+ * @property {'ERC-721'|'ERC-1155'} type
+ * @property {string} token
+ * @property {string} name - Collection name
+ * @property {string} symbol
+ * @property {bigint} tokenId
+ * @property {bigint} amount - Held on-chain, always above zero (1 for ERC-721)
+ * @property {'nft'|'spam'} category
+ */
+
+/**
+ * NFTs have no reliable price, and spam collections copy famous names, so nothing here
+ * is pre-selected. Only scam-looking names are split out.
+ * @param {Array} candidates - From an explorer. Only a hint.
+ * @param {Map<string, bigint|null>} holdings - On-chain amounts by nftKey
+ * @returns {NftAsset[]} Sorted: real-looking NFTs by collection, then spam
+ */
+export function classifyNfts(candidates, holdings) {
+  const seen = new Set();
+  const assets = [];
+  for (const candidate of candidates) {
+    if (candidate.type !== 'ERC-721' && candidate.type !== 'ERC-1155') continue;
+    const key = nftKey(candidate.token, candidate.tokenId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const amount = holdings.get(key);
+    if (typeof amount !== 'bigint' || amount === 0n) continue;
+
+    const category = SPAM_PATTERN.test(`${candidate.name} ${candidate.symbol}`) ? 'spam' : 'nft';
+    assets.push({ ...candidate, amount, category });
+  }
+  return assets.sort(
+    (a, b) =>
+      (a.category === 'spam') - (b.category === 'spam') ||
+      a.name.localeCompare(b.name) ||
+      (a.tokenId < b.tokenId ? -1 : a.tokenId > b.tokenId ? 1 : 0)
   );
 }

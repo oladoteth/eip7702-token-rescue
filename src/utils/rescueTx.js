@@ -8,6 +8,7 @@
 
 import { ethers } from 'ethers';
 import { RESCUE_DELEGATE_ABI, RESCUE_DELEGATE_BYTECODE } from '../contracts/rescueDelegate.js';
+import { nftKey } from '../discovery/balances.js';
 
 // Deterministic CREATE2 deployer (Arachnid). Present on most EVM chains and on anvil.
 export const CREATE2_DEPLOYER = '0x4e59b44847b379578588920cA78FbF26c0B4956C';
@@ -221,4 +222,63 @@ export function erc20TransferCall({ token, to, amount, symbol, decimals }) {
     args: [to, `${shown} ${symbol}`],
     source: 'erc20'
   };
+}
+
+const nftInterface = new ethers.Interface([
+  'function safeTransferFrom(address from, address to, uint256 tokenId)',
+  'function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)'
+]);
+
+/**
+ * Batch calls that move NFTs to the safe wallet: one safeTransferFrom per ERC-721, and one
+ * safeBatchTransferFrom per ERC-1155 collection (cheaper than one call per item).
+ * safeTransferFrom makes the receiver check run, so a safe wallet that cannot hold NFTs
+ * fails in simulation instead of losing them.
+ * @param {Array<{type: string, token: string, tokenId: bigint, amount: bigint, name?: string}>} nfts
+ * @param {string} from - Compromised wallet
+ * @param {string} to - Safe wallet
+ * @returns {object[]} Batch calls. Each has `nftKeys` listing the NFTs it moves.
+ */
+export function nftTransferCalls(nfts, from, to) {
+  const calls = [];
+  const byCollection = new Map();
+
+  for (const nft of nfts) {
+    if (nft.type === 'ERC-721') {
+      calls.push({
+        target: nft.token,
+        value: 0n,
+        data: nftInterface.encodeFunctionData('safeTransferFrom', [from, to, nft.tokenId]),
+        contractName: nft.name || 'NFT',
+        functionName: 'safeTransferFrom',
+        args: [to, `#${nft.tokenId}`],
+        source: 'erc721',
+        nftKeys: [nftKey(nft.token, nft.tokenId)]
+      });
+    } else if (nft.type === 'ERC-1155') {
+      const key = nft.token.toLowerCase();
+      if (!byCollection.has(key)) byCollection.set(key, { token: nft.token, name: nft.name, items: [] });
+      byCollection.get(key).items.push(nft);
+    }
+  }
+
+  for (const { token, name, items } of byCollection.values()) {
+    calls.push({
+      target: token,
+      value: 0n,
+      data: nftInterface.encodeFunctionData('safeBatchTransferFrom', [
+        from,
+        to,
+        items.map((i) => i.tokenId),
+        items.map((i) => i.amount),
+        '0x'
+      ]),
+      contractName: name || 'ERC-1155',
+      functionName: 'safeBatchTransferFrom',
+      args: [to, items.map((i) => `#${i.tokenId} x${i.amount}`).join(', ')],
+      source: 'erc1155',
+      nftKeys: items.map((i) => nftKey(token, i.tokenId))
+    });
+  }
+  return calls;
 }

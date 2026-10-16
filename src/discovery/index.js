@@ -2,10 +2,10 @@
  * Asset discovery for the compromised wallet. Only its address leaves the browser.
  */
 
-import { listBlockscoutTokens } from './blockscout.js';
+import { listBlockscoutTokens, listBlockscoutNfts } from './blockscout.js';
 import { fetchLlamaPrices } from './prices.js';
-import { readErc20Balances } from './balances.js';
-import { classifyErc20 } from './classify.js';
+import { readErc20Balances, readNftHoldings } from './balances.js';
+import { classifyErc20, classifyNfts } from './classify.js';
 
 /**
  * @param {object} network - Entry from networks.js
@@ -56,4 +56,20 @@ export async function discoverErc20({ network, address, provider, onProgress = (
   }
 
   return { assets: classifyErc20(candidates, balances, prices), truncated, skippedUnpriced, pricesUnavailable };
+}
+
+/**
+ * Finds the NFTs an address holds, each confirmed on-chain.
+ * @param {object} params - Same as discoverErc20
+ * @returns {Promise<{assets: import('./classify.js').NftAsset[], truncated: boolean}>}
+ */
+export async function discoverNfts({ network, address, provider, onProgress = () => {}, signal }) {
+  if (!canDiscover(network)) {
+    throw new Error(`Automatic scan is not available on ${network?.name ?? 'this chain'}`);
+  }
+  onProgress('Listing NFTs from Blockscout...');
+  const { candidates, truncated } = await listBlockscoutNfts(network.discovery.blockscout, address, { signal });
+  onProgress(`Confirming ${candidates.length} NFTs on-chain...`);
+  const holdings = await readNftHoldings(provider, candidates, address);
+  return { assets: classifyNfts(candidates, holdings), truncated };
 }

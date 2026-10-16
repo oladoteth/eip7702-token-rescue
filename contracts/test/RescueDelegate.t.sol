@@ -25,6 +25,9 @@ interface IERC721Receiver {
 
 interface IERC1155Receiver {
     function onERC1155Received(address, address, uint256, uint256, bytes calldata) external returns (bytes4);
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external
+        returns (bytes4);
 }
 
 contract MockERC721 {
@@ -62,6 +65,28 @@ contract MockERC1155 {
             require(
                 IERC1155Receiver(to).onERC1155Received(msg.sender, from, id, amount, "")
                     == IERC1155Receiver.onERC1155Received.selector,
+                "receiver"
+            );
+        }
+    }
+
+    function safeBatchTransferFrom(
+        address from,
+        address to,
+        uint256[] calldata ids,
+        uint256[] calldata amounts,
+        bytes calldata
+    ) external {
+        require(msg.sender == from && ids.length == amounts.length, "auth");
+        for (uint256 i; i < ids.length; ++i) {
+            require(balanceOf[from][ids[i]] >= amounts[i], "balance");
+            balanceOf[from][ids[i]] -= amounts[i];
+            balanceOf[to][ids[i]] += amounts[i];
+        }
+        if (to.code.length > 0) {
+            require(
+                IERC1155Receiver(to).onERC1155BatchReceived(msg.sender, from, ids, amounts, "")
+                    == IERC1155Receiver.onERC1155BatchReceived.selector,
                 "receiver"
             );
         }

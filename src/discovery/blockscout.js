@@ -23,6 +23,24 @@ function toCandidate(item) {
   };
 }
 
+async function fetchPage(url, signal) {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  if (!response.ok) {
+    throw new Error(`Blockscout returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function pageUrl(baseUrl, path, types, pageParams) {
+  const url = new URL(path, baseUrl);
+  url.searchParams.set('type', types.join(','));
+  for (const [key, value] of Object.entries(pageParams ?? {})) {
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+
 /**
  * Lists tokens an address holds according to a Blockscout instance.
  * @param {string} baseUrl - Instance root, for example https://eth.blockscout.com
@@ -39,18 +57,7 @@ export async function listBlockscoutTokens(baseUrl, address, { types = ['ERC-20'
   let pageParams = null;
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    const url = new URL(`/api/v2/addresses/${address}/tokens`, baseUrl);
-    url.searchParams.set('type', types.join(','));
-    for (const [key, value] of Object.entries(pageParams ?? {})) {
-      url.searchParams.set(key, String(value));
-    }
-
-    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-    const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    if (!response.ok) {
-      throw new Error(`Blockscout returned HTTP ${response.status}`);
-    }
-    const body = await response.json();
+    const body = await fetchPage(pageUrl(baseUrl, `/api/v2/addresses/${address}/tokens`, types, pageParams), signal);
     candidates.push(...body.items.map(toCandidate));
 
     pageParams = body.next_page_params;
@@ -65,4 +72,37 @@ export async function listBlockscoutTokens(baseUrl, address, { types = ['ERC-20'
     }
   }
   return { candidates, truncated: true, skippedUnpriced: false };
+}
+
+/**
+ * Lists individual NFTs (ERC-721 and ERC-1155) an address holds according to Blockscout.
+ * @param {string} baseUrl - Instance root
+ * @param {string} address - Wallet address
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<{candidates: Array<{type: string, token: string, name: string, symbol: string, tokenId: bigint}>, truncated: boolean}>}
+ */
+export async function listBlockscoutNfts(baseUrl, address, { signal } = {}) {
+  const candidates = [];
+  let pageParams = null;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await fetchPage(pageUrl(baseUrl, `/api/v2/addresses/${address}/nft`, ['ERC-721', 'ERC-1155'], pageParams), signal);
+    for (const item of body.items) {
+      const type = item.token_type ?? item.token?.type;
+      if (type !== 'ERC-721' && type !== 'ERC-1155') continue;
+      candidates.push({
+        type,
+        token: ethers.getAddress(item.token.address_hash),
+        name: item.token.name || '',
+        symbol: item.token.symbol || '',
+        tokenId: BigInt(item.id)
+      });
+    }
+    pageParams = body.next_page_params;
+    if (!pageParams) {
+      return { candidates, truncated: false };
+    }
+  }
+  return { candidates, truncated: true };
 }
