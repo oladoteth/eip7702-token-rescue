@@ -36,7 +36,8 @@ The keys stay in the page's memory. They are never written to `localStorage`, `s
 `contracts/RescueDelegate.sol` is the code the compromised account delegates to.
 
 - `controller` is an immutable address set in the constructor: the rescue wallet. Only it can call `execute`. The attacker holds the compromised key, so the compromised account itself is not allowed to run batches.
-- `execute(Call[] calls)` makes each call in order. If one fails, it reverts with `CallFailed(index, reason)` and the whole batch is undone.
+- `execute(Call[] calls)` makes each call in order. If a required call fails, it reverts with `CallFailed(index, reason)` and the whole batch is undone.
+- A call marked `allowFailure` is optional. The app marks only approval revokes as optional. An optional call gets at most `OPTIONAL_CALL_GAS` (200,000 gas), its return data is not copied, and if it fails the delegate emits `CallSkipped(index)` and carries on. If there is not enough gas left to give an optional call its full cap, `execute` reverts with `NotEnoughGasForOptionalCall`, so a gas estimate cannot settle at a point where revokes are silently skipped.
 - `sweepNative(address to)` sends the account's whole native balance as it is when the call runs. Only the account itself can call it, which means from inside a batch. The holder of the compromised key can already move that ETH directly, so this gives them nothing new.
 - It implements the ERC-721 and ERC-1155 receiver hooks, so the delegated account can still receive NFTs.
 - It uses no storage, so it cannot clash with storage left by an earlier delegation.
@@ -49,12 +50,24 @@ The contract is compiled with Foundry with `bytecode_hash = "none"` and `cbor_me
 
 ## Choosing what to rescue
 
+- **Approvals.** An approval lets another address move the account's tokens, so the attacker can pull tokens that arrive after the rescue. The app lists `Approval`, `ApprovalForAll` and Permit2 approval events for the account through Blockscout's logs API. The API returns at most 1000 logs per query, so a range that hits the cap is split in half until each part is complete, up to 32 queries. Spam contracts emit fake approval events that name their victims, so every approval is confirmed on-chain before it is offered: `allowance` above zero, `isApprovedForAll` true, or a Permit2 allowance that has not expired. Revokes are `approve(spender, 0)`, `setApprovalForAll(operator, false)` and Permit2 `lockdown`. They always run first, as optional calls. A revoke calls the token contract, which an attacker may control. Such a contract cannot move assets, but as a required call it could revert or burn gas and sink the whole rescue.
 - **Tokens and NFTs.** Blockscout lists what the account holds. The app then reads every balance on-chain (`balanceOf`, `ownerOf`), so an asset the chain does not confirm never becomes a call. DefiLlama prices tokens that Blockscout does not. Tokens worth at least $1 are pre-selected. NFTs are never pre-selected, because they have no reliable price and spam collections copy well-known names.
 - **Native coin.** The sweep always runs last, so ETH released by earlier calls is included.
 - **Protocol positions.** Adapters read Lido, Aave v3 and Uniswap v3 positions directly from the chain. See [Adding a protocol adapter](adding-a-protocol-adapter.md).
 - **Custom calls.** Load an ABI, then build a call with the form or paste calldata. Pasted calldata must decode against the ABI and re-encode to exactly the same bytes.
 
 Blockscout receives the compromised account's address. DefiLlama receives only token addresses. No key is sent to either. Each call records the assets it moves, so the same asset cannot be added twice. A second move would revert the whole batch.
+
+## Large batches
+
+The most gas one transaction may use is the block gas limit or 16,777,216 gas (EIP-7825), whichever is lower. A batch that needs more is sent as several transactions:
+
+1. The app simulates the batch and finds the longest run of calls from the start that fits in one transaction, then repeats for the rest. Every call is sent once, in order.
+2. Each part is its own type-4 transaction with a fresh authorization. The rescue wallet's nonces and the authorization nonces both count up by one per part, because each processed authorization bumps the compromised account's nonce. Every part re-applies the delegation, even if the attacker changes it in between.
+3. The parts are sent back to back so that they land in the same or adjacent blocks. If a later part depends on an earlier one, for example moving tokens that an earlier unstake releases, it is planned and sent after the earlier parts are mined.
+4. Each part is checked after mining. The approval revokes are in the first part.
+
+Between parts, the attacker can still use the compromised key directly. Splitting cannot prevent that, so keep batches small where you can, and use a private RPC on Ethereum.
 
 ## Safety checks
 
@@ -63,12 +76,13 @@ Blockscout receives the compromised account's address. DefiLlama receives only t
 | Live EIP-7702 check on the RPC in use | Sending through an RPC whose simulation ignores the authorization. The app delegates a throwaway account to Multicall3 and checks that the delegated code runs. An RPC that fails is never used. |
 | Pre-send review | Calldata from a fake "helper" that sends assets or approvals to an address other than the safe wallet. Such calls show in red, and calls the app cannot check show in amber. Sending needs an explicit confirmation. |
 | Simulation before sending | Paying gas for a batch that would revert. |
-| Gas ceiling | A batch larger than one transaction may use: the block gas limit or 16,777,216 gas (EIP-7825), whichever is lower. |
+| Gas ceiling | Sending a transaction larger than allowed. Larger batches are split, see [Large batches](#large-batches). |
+| Optional revokes | A token contract the attacker controls sinking the rescue through a revoke call. |
 | Delegation check after mining | Reporting success when a stale authorization was skipped and nothing moved. |
 | Content Security Policy | Scripts from anywhere but the app's own origin. See [Self-hosting](self-hosting.md#set-the-http-headers). |
 
 ## Limits
 
-- Automatic token scanning needs a Blockscout instance that answers browser requests. On BNB Smart Chain, Linea, Gnosis, Scroll, Mantle, Berachain, Sonic and Plasma, add tokens manually.
+- Automatic token and approval scanning needs a Blockscout instance that answers browser requests. On BNB Smart Chain, Linea, Gnosis, Scroll, Mantle, Berachain, Sonic and Plasma, add tokens and check approvals manually. The app does not use paid APIs, so users never need an API key.
 - Uniswap v3 positions are moved as NFTs. Closing a position inside the rescue would need price limits to avoid sandwich losses, so close it from the safe wallet afterwards.
 - A transaction sent through a public RPC is visible in the mempool before it is mined. On Ethereum, a private RPC such as Flashbots Protect (`https://rpc.flashbots.net`) avoids this. Enter it in **Use your own RPC**.

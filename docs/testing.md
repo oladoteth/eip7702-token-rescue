@@ -18,13 +18,14 @@ This guide shows how to run Token Rescue's tests and how to test the app against
 npm test
 ```
 
-This runs three suites in order:
+This runs four suites in order:
 
 | Suite | Command | What it covers |
 |---|---|---|
-| Contract | `forge test` | `RescueDelegate`: only the controller can run batches, batches are all or nothing, the native sweep reads the balance when it runs, NFTs can still be received, and the CREATE2 address is deterministic. |
-| Unit | `node --test tests/*.test.mjs` | Call review, ABI parsing, custom calls, discovery, gas limits, the EIP-7702 check and adapter calls. |
-| End-to-end | `node scripts/e2e-rescue.mjs` | Starts anvil, then rescues an ERC-20, an ERC-721, an ERC-1155 batch and ETH in one transaction using the same code as the app. |
+| Contract | `forge test` | `RescueDelegate`: only the controller can run batches, required calls are all or nothing, optional calls cannot sink the batch or burn its gas, the native sweep reads the balance when it runs, NFTs can still be received, and the CREATE2 address is deterministic. |
+| Unit | `node --test tests/*.test.mjs` | Call review, ABI parsing, custom calls, discovery, approvals, batch splitting, gas limits, the EIP-7702 check and adapter calls. |
+| End-to-end | `node scripts/e2e-rescue.mjs` | Starts anvil, then revokes approvals (including one on a hostile token) and rescues an ERC-20, an ERC-721, an ERC-1155 batch and ETH in one transaction using the same code as the app. |
+| Split end-to-end | `node scripts/e2e-split.mjs` | Starts anvil with a 1,000,000 block gas limit and rescues 45 tokens plus revokes and ETH in several transactions. |
 
 To run only the unit tests, run `npm run test:unit`.
 

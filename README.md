@@ -2,7 +2,9 @@
 
 Token Rescue moves assets out of a compromised Ethereum account in one EIP-7702 transaction. A separate rescue wallet pays the gas, so the compromised account never holds ETH that a sweeper bot could take.
 
-One transaction can move ERC-20 tokens, ERC-721 and ERC-1155 NFTs, Lido, Aave v3 and Uniswap v3 positions, the native coin balance, and any custom call you build. If any call fails, nothing moves.
+One transaction can revoke the attacker's approvals and move ERC-20 tokens, ERC-721 and ERC-1155 NFTs, Lido, Aave v3 and Uniswap v3 positions, the native coin balance, and any custom call you build. If a call that moves assets fails, nothing moves. A batch too large for one transaction is split into several automatically.
+
+The app needs no API keys.
 
 The app is a static site with no backend. You can run it on your own machine or host it yourself.
 
