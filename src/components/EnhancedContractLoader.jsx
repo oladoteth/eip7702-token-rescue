@@ -13,6 +13,7 @@ export function EnhancedContractLoader() {
   const [selectedContract, setSelectedContract] = useState(null);
   const [txDataInput, setTxDataInput] = useState('');
   const [decodedTx, setDecodedTx] = useState(null);
+  const [decodeTarget, setDecodeTarget] = useState('');
 
   const handleAdd = () => {
     setError(null);
@@ -55,20 +56,20 @@ export function EnhancedContractLoader() {
 
   const handleDecodeTransaction = () => {
     setError(null);
-    
+    setDecodedTx(null);
+
     if (!txDataInput.trim()) {
       setError('Transaction data is required');
       return;
     }
-
     if (contracts.length === 0) {
       setError('No contracts loaded. Please load contracts first.');
       return;
     }
 
     try {
-      const decoded = decodeTransactionWithContracts(txDataInput, contracts);
-      setDecodedTx(decoded);
+      // Bare hex has no "to", so it is decoded against the contract chosen below.
+      setDecodedTx(decodeTransactionWithContracts(txDataInput, contracts, decodeTarget || contracts[0].address));
     } catch (err) {
       setError(err.message);
     }
@@ -76,51 +77,7 @@ export function EnhancedContractLoader() {
 
   const handleAddDecodedToBatch = () => {
     if (!decodedTx) return;
-    
-    // Extract data from input
-    let data = txDataInput.trim();
-    
-    // Try to extract from JSON
-    if (data.includes('{')) {
-      try {
-        const json = JSON.parse(data);
-        data = json.data || json.input || json.dataHex || data;
-      } catch (e) {
-        // Not valid JSON, try to extract hex
-        const hexMatch = data.match(/0x[a-fA-F0-9]{8,}/);
-        if (hexMatch) {
-          data = hexMatch[0];
-        }
-      }
-    }
-    
-    // Ensure it's a hex string
-    if (!data.startsWith('0x')) {
-      setError('Invalid transaction data format');
-      return;
-    }
-    
-    // Parse value
-    let value = 0n;
-    if (decodedTx.value) {
-      try {
-        value = typeof decodedTx.value === 'string' 
-          ? ethers.parseEther(decodedTx.value === '0' ? '0' : decodedTx.value)
-          : BigInt(decodedTx.value);
-      } catch {
-        value = 0n;
-      }
-    }
-    
-    addBatchCall({
-      target: decodedTx.contractAddress,
-      data: data,
-      value: value,
-      contractName: decodedTx.contractName,
-      functionName: decodedTx.functionName,
-      args: decodedTx.args
-    });
-    
+    addBatchCall({ ...decodedTx, source: 'custom' });
     setDecodedTx(null);
     setTxDataInput('');
     setError(null);
@@ -207,7 +164,20 @@ export function EnhancedContractLoader() {
 
       <div className="transaction-decoder">
         <h4>Decode Transaction Data</h4>
-        <p>Paste transaction data (hex or JSON) to decode and add to batch</p>
+        <p>
+          Paste calldata (0x...) or a JSON transaction with "to", "data" and "value" (in wei). It must decode
+          exactly against a loaded ABI.
+        </p>
+        {contracts.length > 0 && (
+          <label>
+            Contract for bare calldata:{' '}
+            <select value={decodeTarget || contracts[0].address} onChange={(e) => setDecodeTarget(e.target.value)}>
+              {contracts.map((c, i) => (
+                <option key={i} value={c.address}>{c.name} ({c.address.slice(0, 10)}...)</option>
+              ))}
+            </select>
+          </label>
+        )}
         <textarea
           value={txDataInput}
           onChange={(e) => setTxDataInput(e.target.value)}
@@ -221,8 +191,9 @@ export function EnhancedContractLoader() {
           <div className="decoded-transaction">
             <h5>Decoded Transaction</h5>
             <div className="decoded-info">
-              <p><strong>Contract:</strong> {decodedTx.contractName}</p>
-              <p><strong>Function:</strong> {decodedTx.functionName}</p>
+              <p><strong>Contract:</strong> {decodedTx.contractName} <code>{decodedTx.target}</code></p>
+              <p><strong>Function:</strong> <code>{decodedTx.signature}</code></p>
+              <p><strong>Value:</strong> {ethers.formatEther(decodedTx.value)}</p>
               <p><strong>Arguments:</strong></p>
               <ul>
                 {decodedTx.args.map((arg, idx) => (

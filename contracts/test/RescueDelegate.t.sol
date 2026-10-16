@@ -93,6 +93,39 @@ contract MockERC1155 {
     }
 }
 
+/// Stand-in for a staking protocol: tokens and ETH rewards only reach the staker on unstake
+/// and claim, so a rescue must run those calls before the transfers in the same batch.
+contract MockStaking {
+    MockERC20 public immutable token;
+    mapping(address => uint256) public staked;
+    mapping(address => uint256) public ethRewards;
+
+    constructor(MockERC20 token_) {
+        token = token_;
+    }
+
+    function stakeFor(address who, uint256 amount) external {
+        staked[who] += amount;
+    }
+
+    function addEthReward(address who) external payable {
+        ethRewards[who] += msg.value;
+    }
+
+    function unstake(uint256 amount) external {
+        require(staked[msg.sender] >= amount, "staked");
+        staked[msg.sender] -= amount;
+        require(token.transfer(msg.sender, amount), "transfer");
+    }
+
+    function claimRewards() external {
+        uint256 amount = ethRewards[msg.sender];
+        ethRewards[msg.sender] = 0;
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok, "eth");
+    }
+}
+
 contract RescueDelegateTest is Test {
     address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 

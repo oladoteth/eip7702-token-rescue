@@ -1,83 +1,44 @@
 import { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { encodeFunctionCall } from '../utils/contracts';
-import { getWriteFunctions, formatFunctionSignature, getFunctionParameterTypes } from '../utils/contractFunctions';
-import { ethers } from 'ethers';
+import { getWriteFunctions, functionSignature, buildCustomCall } from '../utils/contractFunctions';
+
+function placeholderFor(type) {
+  if (type.endsWith(']')) return 'JSON array, for example [1, 2]';
+  if (type.startsWith('tuple')) return 'JSON array of the fields, in order';
+  if (type === 'bool') return 'true or false';
+  if (type === 'address') return '0x...';
+  if (type.startsWith('bytes')) return '0x...';
+  return type;
+}
 
 export function InteractiveBatchBuilder() {
-  const { contracts, addBatchCall } = useApp();
+  const { contracts, addBatchCall, currentChain } = useApp();
   const [selectedContract, setSelectedContract] = useState('');
-  const [selectedFunction, setSelectedFunction] = useState('');
+  const [selectedSignature, setSelectedSignature] = useState('');
   const [functionParams, setFunctionParams] = useState({});
   const [callValue, setCallValue] = useState('0');
   const [error, setError] = useState(null);
 
-  const selectedContractData = contracts.find(c => c.address === selectedContract);
-
-  const availableFunctions = selectedContractData
-    ? getWriteFunctions(selectedContractData.abi)
-    : [];
-
-  const selectedFunctionData = availableFunctions.find(f => f.name === selectedFunction);
-
-  const handleParamChange = (paramIndex, value) => {
-    setFunctionParams(prev => ({
-      ...prev,
-      [paramIndex]: value
-    }));
-  };
+  const selectedContractData = contracts.find((c) => c.address === selectedContract);
+  const availableFunctions = selectedContractData ? getWriteFunctions(selectedContractData.abi) : [];
+  // Overloads share a name, so functions are picked by their full signature.
+  const selectedFunctionData = availableFunctions.find((f) => functionSignature(f) === selectedSignature);
+  const symbol = currentChain?.nativeCurrency?.symbol || 'ETH';
 
   const handleAddCall = () => {
     setError(null);
-
-    if (!selectedContract) {
+    if (!selectedContractData) {
       setError('Please select a contract');
       return;
     }
-
-    if (!selectedFunction) {
+    if (!selectedFunctionData) {
       setError('Please select a function');
       return;
     }
-
     try {
-      // Build parameters array
-      const params = selectedFunctionData.inputs.map((input, idx) => {
-        const value = functionParams[idx] || '';
-        
-        // Try to parse based on type
-        if (input.type.startsWith('uint') || input.type.startsWith('int')) {
-          return value ? BigInt(value) : 0n;
-        } else if (input.type === 'bool') {
-          return value === 'true' || value === true;
-        } else if (input.type === 'address') {
-          if (!ethers.isAddress(value)) {
-            throw new Error(`Invalid address for parameter ${input.name}`);
-          }
-          return value;
-        } else if (input.type.startsWith('bytes')) {
-          if (!value.startsWith('0x')) {
-            throw new Error(`Bytes parameter ${input.name} must start with 0x`);
-          }
-          return value;
-        } else {
-          return value;
-        }
-      });
-
-      const data = encodeFunctionCall(selectedContractData.abi, selectedFunction, params);
-      
-      addBatchCall({
-        target: selectedContract,
-        data,
-        value: ethers.parseEther(callValue || '0'),
-        contractName: selectedContractData.name,
-        functionName: selectedFunction,
-        params: params.map(p => String(p))
-      });
-
-      // Reset form
-      setSelectedFunction('');
+      const params = selectedFunctionData.inputs.map((_, idx) => functionParams[idx]);
+      addBatchCall(buildCustomCall(selectedContractData, selectedSignature, params, callValue));
+      setSelectedSignature('');
       setFunctionParams({});
       setCallValue('0');
     } catch (err) {
@@ -102,7 +63,7 @@ export function InteractiveBatchBuilder() {
           value={selectedContract}
           onChange={(e) => {
             setSelectedContract(e.target.value);
-            setSelectedFunction('');
+            setSelectedSignature('');
             setFunctionParams({});
           }}
         >
@@ -116,24 +77,28 @@ export function InteractiveBatchBuilder() {
 
         {selectedContract && (
           <select
-            value={selectedFunction}
+            value={selectedSignature}
             onChange={(e) => {
-              setSelectedFunction(e.target.value);
+              setSelectedSignature(e.target.value);
               setFunctionParams({});
             }}
           >
             <option value="">Select Function</option>
-            {availableFunctions.map((func, index) => (
-              <option key={index} value={func.name}>
-                {formatFunctionSignature(func)}
-              </option>
-            ))}
+            {availableFunctions.map((func) => {
+              const signature = functionSignature(func);
+              return (
+                <option key={signature} value={signature}>
+                  {signature}{func.stateMutability === 'payable' ? ' (payable)' : ''}
+                </option>
+              );
+            })}
           </select>
         )}
 
         {selectedFunctionData && (
           <div className="function-params">
             <h4>Function Parameters</h4>
+            {selectedFunctionData.inputs.length === 0 && <p className="hint">This function takes no parameters.</p>}
             {selectedFunctionData.inputs.map((input, idx) => (
               <div key={idx} className="param-input">
                 <label>
@@ -142,26 +107,28 @@ export function InteractiveBatchBuilder() {
                 <input
                   type="text"
                   value={functionParams[idx] || ''}
-                  onChange={(e) => handleParamChange(idx, e.target.value)}
-                  placeholder={`Enter ${input.type}`}
+                  onChange={(e) => setFunctionParams((prev) => ({ ...prev, [idx]: e.target.value }))}
+                  placeholder={placeholderFor(input.type)}
                 />
               </div>
             ))}
           </div>
         )}
 
-        <div className="value-input">
-          <label>ETH Value (optional)</label>
-          <input
-            type="text"
-            value={callValue}
-            onChange={(e) => setCallValue(e.target.value)}
-            placeholder="0"
-          />
-        </div>
+        {selectedFunctionData?.stateMutability === 'payable' && (
+          <div className="value-input">
+            <label>{symbol} to send with the call (from the compromised wallet)</label>
+            <input
+              type="text"
+              value={callValue}
+              onChange={(e) => setCallValue(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+        )}
 
         {error && <div className="error">{error}</div>}
-        <button onClick={handleAddCall} disabled={!selectedFunction}>
+        <button onClick={handleAddCall} disabled={!selectedFunctionData}>
           Add to Batch
         </button>
       </div>

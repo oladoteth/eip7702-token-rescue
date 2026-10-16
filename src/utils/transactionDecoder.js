@@ -1,133 +1,120 @@
 /**
- * Transaction Decoder Utilities
- * Decodes transaction data from pasted transaction data
+ * Decodes pasted transaction data (from an explorer, a dapp or a wallet) into a batch call.
+ * Nothing pasted is trusted: the calldata must decode exactly against a loaded ABI.
  */
 
 import { ethers } from 'ethers';
 
 /**
- * Decode transaction data
- * @param {string} contractAddress - Contract address
- * @param {Array} abi - Contract ABI
- * @param {string} data - Transaction data (hex string)
- * @returns {object} Decoded transaction information
+ * Parses a transaction `value` in wei. Explorers and wallets give it as hex wei
+ * ("0x2386f26fc10000") or decimal wei ("10000000000000000"). A decimal point means the
+ * value is not in wei, so it is refused instead of guessed: a wrong guess moves the
+ * wrong amount.
+ * @param {string|number|bigint|null|undefined} input
+ * @returns {bigint}
  */
-export function decodeTransaction(contractAddress, abi, data) {
-  try {
-    const iface = new ethers.Interface(abi);
-    const decoded = iface.parseTransaction({ data });
-
-    return {
-      contractAddress,
-      functionName: decoded.name,
-      args: decoded.args.map(arg => {
-        // Convert BigNumber to string for display
-        if (ethers.isBigNumberish(arg)) {
-          return arg.toString();
-        }
-        return arg;
-      }),
-      signature: decoded.signature,
-      fragment: decoded.fragment
-    };
-  } catch (error) {
-    throw new Error(`Failed to decode transaction: ${error.message}`);
+export function parseWeiValue(input) {
+  if (input == null || input === '') return 0n;
+  if (typeof input === 'bigint') {
+    if (input < 0n) throw new Error('Value cannot be negative');
+    return input;
   }
+  if (typeof input === 'number') {
+    if (!Number.isSafeInteger(input) || input < 0) {
+      throw new Error(`Value ${input} is not a whole number of wei. Paste it as a string.`);
+    }
+    return BigInt(input);
+  }
+  const text = String(input).trim();
+  if (/^0x[0-9a-f]+$/i.test(text)) return BigInt(text);
+  if (/^\d+$/.test(text)) return BigInt(text);
+  throw new Error(`Value "${text}" is not a whole number of wei (hex like 0x2386f26fc10000, or decimal wei).`);
 }
 
 /**
- * Parse transaction data from various formats
- * @param {string} input - Transaction data (can be hex string, JSON, etc.)
- * @returns {object} Parsed transaction data
+ * Formats a decoded argument for display. Arrays and tuples are shown as JSON.
+ */
+function formatArg(arg) {
+  if (typeof arg === 'bigint') return arg.toString();
+  if (Array.isArray(arg)) return JSON.stringify(arg, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
+  return String(arg);
+}
+
+/**
+ * Extracts {to, data, value} from pasted text: JSON transaction, or bare hex calldata.
+ * @param {string} input
+ * @returns {{to: string|null, data: string, value: bigint}}
  */
 export function parseTransactionInput(input) {
   const trimmed = input.trim();
-  
-  // Try to parse as JSON first
-  try {
-    const json = JSON.parse(trimmed);
-    if (json.data || json.input) {
-      return {
-        to: json.to || json.toAddress || json.to_address,
-        data: json.data || json.input || json.dataHex,
-        value: json.value || json.valueHex || '0',
-        from: json.from || json.fromAddress || json.from_address
-      };
+  if (trimmed.startsWith('{')) {
+    let json;
+    try {
+      json = JSON.parse(trimmed);
+    } catch (error) {
+      throw new Error(`Invalid JSON: ${error.message}`);
     }
-  } catch (e) {
-    // Not JSON, continue
+    const data = json.data ?? json.input ?? json.calldata;
+    if (typeof data !== 'string' || !/^0x[0-9a-f]*$/i.test(data) || data.length < 10) {
+      throw new Error('The JSON has no valid "data" or "input" field.');
+    }
+    const to = json.to ?? null;
+    if (to != null && !ethers.isAddress(to)) {
+      throw new Error(`The "to" field is not an address: ${to}`);
+    }
+    return { to: to && ethers.getAddress(to), data, value: parseWeiValue(json.value) };
   }
-
-  // Try to parse as hex string directly
-  if (trimmed.startsWith('0x') && trimmed.length > 10) {
-    return {
-      data: trimmed,
-      value: '0'
-    };
+  if (/^0x[0-9a-f]+$/i.test(trimmed) && trimmed.length >= 10 && trimmed.length % 2 === 0) {
+    return { to: null, data: trimmed, value: 0n };
   }
-
-  // Try to extract from text that might contain hex
-  const hexMatch = trimmed.match(/0x[a-fA-F0-9]{8,}/);
-  if (hexMatch) {
-    return {
-      data: hexMatch[0],
-      value: '0'
-    };
-  }
-
-  throw new Error('Unable to parse transaction data. Please provide hex data (0x...) or JSON format.');
+  throw new Error('Paste hex calldata (0x...) or a JSON transaction with "to", "data" and "value".');
 }
 
 /**
- * Extract contract address from transaction
- * @param {object} tx - Transaction object
- * @returns {string} Contract address
+ * Decodes pasted input against the loaded contracts.
+ * @param {string} input - Pasted text
+ * @param {Array<{address: string, abi: Array, name: string}>} contracts - Loaded contracts
+ * @param {string|null} fallbackAddress - Contract to use when the input has no "to"
+ * @returns {{target: string, data: string, value: bigint, contractName: string,
+ *   functionName: string, signature: string, args: string[]}}
  */
-export function extractContractAddress(tx) {
-  if (tx.to) {
-    return tx.to;
-  }
-  throw new Error('Contract address not found in transaction data');
-}
-
-/**
- * Decode transaction and match with ABI
- * @param {string} input - Transaction input (hex or JSON)
- * @param {Array} contracts - Array of {address, abi, name} objects
- * @returns {object} Decoded transaction with matched contract
- */
-export function decodeTransactionWithContracts(input, contracts) {
+export function decodeTransactionWithContracts(input, contracts, fallbackAddress = null) {
   const parsed = parseTransactionInput(input);
-  const contractAddress = extractContractAddress(parsed);
-
-  // Find matching contract
-  const contract = contracts.find(c => 
-    c.address.toLowerCase() === contractAddress.toLowerCase()
-  );
-
+  const target = parsed.to ?? fallbackAddress;
+  if (!target) {
+    throw new Error('This calldata has no "to" address. Choose which loaded contract it is for.');
+  }
+  const contract = contracts.find((c) => c.address.toLowerCase() === target.toLowerCase());
   if (!contract) {
-    throw new Error(`No matching contract found for address ${contractAddress}. Please load the contract with this address first.`);
+    throw new Error(`No loaded contract at ${target}. Load its ABI first.`);
   }
 
-  // Ensure data is a valid hex string
-  let data = parsed.data;
-  if (!data.startsWith('0x')) {
-    // Try to extract hex from the input
-    const hexMatch = input.match(/0x[a-fA-F0-9]{8,}/);
-    if (hexMatch) {
-      data = hexMatch[0];
-    } else {
-      throw new Error('Invalid transaction data format. Expected hex string starting with 0x.');
-    }
+  const iface = new ethers.Interface(contract.abi);
+  let decoded;
+  try {
+    decoded = iface.parseTransaction({ data: parsed.data, value: parsed.value });
+  } catch {
+    decoded = null;
   }
-
-  const decoded = decodeTransaction(contractAddress, contract.abi, data);
+  if (!decoded) {
+    throw new Error(`The calldata does not match any function in the ${contract.name} ABI.`);
+  }
+  // Re-encode and compare, so extra or malformed bytes cannot ride along unseen.
+  const reencoded = iface.encodeFunctionData(decoded.fragment, decoded.args);
+  if (reencoded.toLowerCase() !== parsed.data.toLowerCase()) {
+    throw new Error('The calldata has extra or malformed bytes after the arguments. Refusing it.');
+  }
+  if (parsed.value > 0n && !decoded.fragment.payable) {
+    throw new Error(`${decoded.name} is not payable, but the transaction sends value.`);
+  }
 
   return {
-    ...decoded,
-    contractName: contract.name,
+    target: ethers.getAddress(contract.address),
+    data: parsed.data,
     value: parsed.value,
-    from: parsed.from,
-    data: data // Include the original data
+    contractName: contract.name,
+    functionName: decoded.name,
+    signature: decoded.signature,
+    args: decoded.args.map(formatArg)
   };
 }
