@@ -12,7 +12,7 @@ function AppContent() {
       <header>
         <h1>Token Rescue Tool</h1>
         <p>
-          Rescue tokens and NFTs from compromised wallets using batcher contracts
+          Move tokens, NFTs and staked positions out of a compromised wallet in one EIP-7702 transaction
         </p>
       </header>
 
@@ -44,8 +44,8 @@ function AppContent() {
             leave your device.
           </p>
           <p>
-            This tool uses batcher contracts for batch execution. The rescue wallet
-            pays for gas fees.
+            Your rescue wallet pays all gas. The compromised wallet never receives ETH, so
+            a sweeper bot has nothing to take.
           </p>
       </footer>
     </div>

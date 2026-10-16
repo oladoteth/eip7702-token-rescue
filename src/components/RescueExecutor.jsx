@@ -46,7 +46,7 @@ export function RescueExecutor({ gasSettings }) {
     }
 
     if (!batcherContract) {
-      setError('Batcher contract address not set');
+      setError('Rescue delegate is not deployed');
       return;
     }
 

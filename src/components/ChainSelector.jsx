@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { getAvailableNetworks } from '../utils/chainManagement';
+import { getAllNetworks } from '../utils/networks';
 import { ethers } from 'ethers';
 
 export function ChainSelector() {
@@ -71,7 +71,7 @@ export function ChainSelector() {
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
 
-  const networks = getAvailableNetworks();
+  const networks = getAllNetworks();
 
   // Update selected chain in context when changed
   const handleChainChange = useCallback((targetChainId) => {

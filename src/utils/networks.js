@@ -307,8 +307,3 @@ export function getNetworkByChainId(chainId) {
 export function getAllNetworks() {
   return Object.values(NETWORKS);
 }
-
-export function getNetworkName(chainId) {
-  const network = getNetworkByChainId(chainId);
-  return network ? network.name : `Chain ${chainId}`;
-}

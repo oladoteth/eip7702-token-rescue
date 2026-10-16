@@ -52,7 +52,7 @@ export function BatcherDeploymentModal({ address, chainName, chainId, txHash, on
         <button className="modal-close" onClick={onClose} title="Close">×</button>
         
         <div className="modal-status">
-          <h2>Batcher Contract Deployed Successfully on {chainName}!</h2>
+          <h2>Rescue Delegate Deployed on {chainName}</h2>
           
           <div className="deployment-info">
             <div className="info-item">

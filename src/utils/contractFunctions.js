@@ -50,42 +50,6 @@ export function formatFunctionSignature(func) {
 }
 
 /**
- * Get function parameter types
- * @param {object} func - Function ABI object
- * @returns {Array} Array of parameter types
- */
-export function getFunctionParameterTypes(func) {
-  return func.inputs.map(input => input.type);
-}
-
-/**
- * Get function parameter names
- * @param {object} func - Function ABI object
- * @returns {Array} Array of parameter names
- */
-export function getFunctionParameterNames(func) {
-  return func.inputs.map(input => input.name || '');
-}
-
-/**
- * Validate function parameters
- * @param {object} func - Function ABI object
- * @param {Array} values - Parameter values
- * @returns {object} Validation result
- */
-export function validateFunctionParameters(func, values) {
-  if (values.length !== func.inputs.length) {
-    return {
-      valid: false,
-      error: `Expected ${func.inputs.length} parameters, got ${values.length}`
-    };
-  }
-
-  // Basic type validation could be added here
-  return { valid: true };
-}
-
-/**
  * Canonical signature, for example "safeTransferFrom(address,address,uint256)". Unique per
  * function, unlike the name, which overloads share.
  * @param {object} func - Function ABI object

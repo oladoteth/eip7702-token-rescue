@@ -97,7 +97,7 @@ export function AppProvider({ children }) {
   const rescueWalletView = useMemo(() => connect(rescueWallet), [connect, rescueWallet]);
   const compromisedWalletView = useMemo(() => connect(compromisedWallet), [connect, compromisedWallet]);
 
-  // Function to clear all application state and localStorage
+  // Clears all application state. Nothing is kept in browser storage.
   const clearAllState = useCallback((clearRescueWallet = false) => {
     console.log('[AppContext] Clearing all application state...');
     
@@ -110,12 +110,6 @@ export function AppProvider({ children }) {
     setBatcherContract(null);
     setContracts([]);
     setBatchCalls([]);
-    
-    // Clear localStorage for all chains
-    import('../utils/contractDeployment').then(({ clearAllStoredContracts }) => {
-      clearAllStoredContracts();
-      console.log('[AppContext] Cleared all stored contract addresses from localStorage');
-    });
   }, []);
 
   // Reset ALL flow state on chain change - start fresh
@@ -125,18 +119,12 @@ export function AppProvider({ children }) {
     
     if (currentChainId && prevChainId !== null && prevChainId !== currentChainId) {
       console.log('[AppContext] Chain changed, resetting entire flow:', prevChainId, '->', currentChainId);
-      // Reset everything - compromised wallet, batcher, contracts, batch calls
+      // Reset everything - compromised wallet, delegate, contracts, batch calls
       // Note: rescueWallet is kept - user can reuse it on different chains
       setCompromisedWallet(null);
       setBatcherContract(null);
       setContracts([]);
       setBatchCalls([]);
-      
-      // Clear localStorage for the previous chain
-      import('../utils/contractDeployment').then(({ clearStoredContracts }) => {
-        clearStoredContracts(prevChainId);
-        console.log('[AppContext] Cleared stored contracts for previous chain:', prevChainId);
-      });
     }
     
     // Update ref after processing
@@ -208,7 +196,7 @@ export function AppProvider({ children }) {
     setBalanceRefreshKey((key) => key + 1);
   }, []);
 
-  // Batcher contract management
+  // Rescue delegate (kept under the old "batcher" names in state)
   const setBatcherAddress = useCallback((address) => {
     if (address && provider) {
       const contract = new ethers.Contract(address, RESCUE_DELEGATE_ABI, provider);

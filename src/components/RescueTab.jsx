@@ -22,21 +22,13 @@ export function RescueTab() {
   const currentChain = rpcStatus?.eip7702?.supported ? selectedChain : null;
   const [gasSettings, setGasSettings] = useState(null);
 
-  // Reset gas settings when batch calls or batcher contract changes
-  // This ensures gas settings are recalculated when dependencies change
+  // Reset gas settings when the batch or the delegate changes, so they are recalculated
   useEffect(() => {
     setGasSettings(null);
   }, [batchCalls, batcherContract?.address]);
 
-  // Step-by-step flow enforcement
-  // Step 1: Select chain (always visible)
-  // Step 2: Setup rescue wallet (visible when chain selected)
-  // Step 3: Enter compromised wallet (visible when rescue wallet set)
-  // Step 4: Deploy/set batcher (visible when compromised wallet set)
-  // Step 5: Load contracts (visible when batcher set)
-  // Step 6: Build batch (visible when batcher set)
-  // Step 7: Review & gas (visible when batch calls exist and batcher set)
-  // Step 8: Execute (visible when gas settings ready)
+  // Each step appears once the one before it is done: chain (with a passing EIP-7702
+  // check), rescue wallet, safe wallet, compromised wallet, delegate, batch, gas, execute.
 
   return (
     <>
@@ -66,21 +58,21 @@ export function RescueTab() {
         </section>
       )}
 
-      {/* Step 4: Deploy/Set Batcher Contract - Visible when compromised wallet is set */}
+      {/* Step 4: Deploy/Set Rescue Delegate - Visible when compromised wallet is set */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && (
         <section className="batcher-section">
           <BatcherDeployment />
         </section>
       )}
 
-      {/* Step 5: Load Contracts - Visible when batcher contract is set */}
+      {/* Step 5: Load Contracts - Visible when the delegate is deployed */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="contract-section">
           <EnhancedContractLoader />
         </section>
       )}
 
-      {/* Step 6: Build Batch Transactions - Visible when batcher contract is set */}
+      {/* Step 6: Build Batch Transactions - Visible when the delegate is deployed */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && (
         <section className="batch-section">
           <AssetScanner />
@@ -98,7 +90,7 @@ export function RescueTab() {
         </section>
       )}
 
-      {/* Step 8: Configure Gas - Visible when batch calls exist and batcher contract is set */}
+      {/* Step 8: Configure Gas - Visible when batch calls exist and the delegate is deployed */}
       {currentChain && rescueWallet && safeWallet && compromisedWallet && batcherContract && batchCalls.length > 0 && (
         <section className="gas-section">
           <GasSettings onGasSettingsReady={setGasSettings} />
@@ -123,7 +115,7 @@ export function RescueTab() {
             </p>
             <p className="warning-text">
               <strong>⚠️ Important:</strong> Changing the network will reset the entire flow. 
-              You'll need to re-enter the compromised wallet and set the batcher contract.
+              You'll need to re-enter the compromised wallet and rebuild the batch.
             </p>
           </div>
           <div className="step">
@@ -158,31 +150,25 @@ export function RescueTab() {
             </p>
           </div>
           <div className="step">
-            <h3>6. Load Contracts & ABIs</h3>
+            <h3>6. Choose What to Rescue</h3>
             <p>
-              Load contracts and ABIs. View read/write functions or decode
-              pasted transaction data.
+              Scan the compromised wallet for tokens and NFTs, scan Lido, Aave and Uniswap
+              positions, add the native coin sweep, or add custom calls for anything else.
             </p>
           </div>
           <div className="step">
-            <h3>7. Build Batch Transactions</h3>
+            <h3>7. Review and Set Gas</h3>
             <p>
-              Build transactions interactively or decode and add pasted
-              transaction data.
+              Every call is checked against your safe wallet before sending. The whole batch is
+              simulated, including the delegation, to set the gas limit.
             </p>
           </div>
           <div className="step">
-            <h3>8. Review & Configure Gas</h3>
+            <h3>8. Execute the Rescue</h3>
             <p>
-              Review transaction order, configure gas settings, and check balance
-              sufficiency.
-            </p>
-          </div>
-          <div className="step">
-            <h3>9. Execute Rescue</h3>
-            <p>
-              One EIP-7702 transaction: the compromised wallet delegates to the rescue
-              delegate, and the rescue wallet pays the gas to run the whole batch.
+              One EIP-7702 transaction: the compromised wallet delegates to the rescue delegate,
+              and the rescue wallet pays the gas to run the whole batch. If any call fails,
+              nothing moves.
             </p>
           </div>
         </div>
