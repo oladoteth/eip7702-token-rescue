@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Webapp for rescuing tokens and NFTs from compromised wallets using EIP-7702 and gasless transactions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oladoteth/eip7702-token-rescue.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

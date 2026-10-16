@@ -39,3 +39,7 @@ The output is in `dist/`. Serve it with any static host. Read [Self-hosting](doc
 ## Private keys
 
 The app needs the private key of the compromised account and of the rescue wallet. Browser wallets such as MetaMask do not let a site request an EIP-7702 authorization for an arbitrary contract, so a raw key is the only way to sign one. Keys stay in the page's memory. They are never written to browser storage and never sent to a server. [How it works](docs/how-it-works.md#why-the-app-needs-private-keys) explains the details.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
