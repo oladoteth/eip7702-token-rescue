@@ -40,7 +40,7 @@ Serve the site over HTTPS only.
 
 ### Example: Netlify or Cloudflare Pages
 
-Create `dist/_headers`, or put `_headers` in `public/` so the build copies it:
+The repository includes `public/_headers`, and the build copies it to `dist/_headers`. Netlify and Cloudflare Pages apply it automatically. It contains:
 
 ```text
 /*
