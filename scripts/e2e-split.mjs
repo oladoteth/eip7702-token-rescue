@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { ethers } from 'ethers';
-import { ensureDelegateDeployed, erc20TransferCall, nativeSweepCall, revokeCalls, encodeExecute } from '../src/utils/rescueTx.js';
+import { ensureDelegateDeployed, erc20TransferCall, nativeSweepCall, revokeCalls } from '../src/utils/rescueTx.js';
 import { executeInParts } from '../src/utils/batchSplit.js';
 import { PERMIT2 } from '../src/discovery/approvals.js';
 import { RESCUE_DELEGATE_ABI } from '../src/contracts/rescueDelegate.js';
@@ -71,6 +71,8 @@ try {
   const authNonces = sentTxs.map((tx) => {
     assert.equal(tx.type, 4);
     assert.equal(tx.authorizationList.length, 1);
+    // Bound to this chain: an authorization with chain id 0 would be valid on every chain.
+    assert.equal(BigInt(tx.authorizationList[0].chainId), 31337n, 'authorization is bound to the chain');
     return BigInt(tx.authorizationList[0].nonce);
   });
   authNonces.forEach((n, i) => i > 0 && assert.equal(n, authNonces[i - 1] + 1n, 'consecutive authorization nonces'));
@@ -78,8 +80,6 @@ try {
   // Revokes run in part 1, before any asset moves.
   const [firstCalls] = executeIface.decodeFunctionData('execute', sentTxs[0].data);
   assert.deepEqual(firstCalls.slice(0, 3).map((c) => c.data.slice(0, 10)), Array(3).fill(ethers.id('approve(address,uint256)').slice(0, 10)));
-  assert.equal(sentTxs[0].data, sentTxs[0].data); // decoded above without error
-  void encodeExecute;
 
   for (let i = 0; i < TOKENS; i++) {
     assert.equal(await tokens[i].balanceOf(safe), ethers.parseEther(String(i + 1)), `token ${i} at safe`);

@@ -35,6 +35,7 @@ The output is in `dist/`. Serve it with any static host. Read [Self-hosting](doc
 | [Self-hosting](docs/self-hosting.md) | Build and serve the app, set the HTTP headers, and add a network. |
 | [Adding a protocol adapter](docs/adding-a-protocol-adapter.md) | Support a new staking or lending protocol. |
 | [Testing](docs/testing.md) | Run the contract, unit, end-to-end and fork tests. |
+| [Security model and contract review](docs/security.md) | Understand the threat model, the assumptions and the review findings. |
 
 ## Private keys
 
